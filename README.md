@@ -1,58 +1,38 @@
-# CivilBid Cloud v1
+# CivilBid 2.0 — Authenticated Starter
 
-Cloud/PWA client for the Supabase schema already installed in your CivilBid project.
+Civil construction estimating, bidding, field production, and cost intelligence platform.
 
-## What this build already does
-- Supabase email/password login
-- Loads only projects allowed by Row Level Security
-- Foreman daily reports
-- Production by estimate/pay item
-- Labor hours by employee + pay item
-- Equipment hours by machine + pay item
-- Private photo/PDF/ticket uploads
-- Submit report for manager review
-- Installable PWA shell (Add to Home Screen)
+## Included in this build
 
-## 1. Apply Storage RLS
-Open Supabase > SQL Editor and run `storage_policies.sql` once.
+- Next.js 14 + TypeScript
+- Supabase authentication using SSR cookie sessions
+- Protected application routes through Next.js middleware
+- Login and logout
+- CivilBid profile / role lookup
+- Role-aware navigation for Owner, Admin, Estimator, Project Manager, Foreman, and Read Only
+- Existing CivilBid dashboard and module placeholders
 
-## 2. Find your two browser-safe Supabase values
-Supabase Dashboard > Project Settings / API (or Connect):
-- Project URL
-- Publishable key (or legacy anon public key)
+## Required Vercel environment variables
 
-DO NOT use the service_role key in this app.
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — use the Supabase publishable key already configured in Vercel
 
-## 3. Local test
-Copy `.env.example` to `.env.local` and fill in:
+## Deployment
 
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
+Upload/commit these files at the root of the existing `CivilBid-2.0` GitHub repository. Vercel should automatically redeploy from the commit. Do not upload this folder as an extra nested directory.
 
-Then:
+## Authentication test
 
-npm install
-npm run dev
+1. Open the deployed site in a private/incognito window.
+2. You should be redirected to `/login`.
+3. Sign in with the Supabase Owner account created during setup.
+4. You should be redirected to `/dashboard`.
+5. The sidebar should show the user's CivilBid role and a Sign out button.
+6. Sign out and verify the dashboard cannot be reopened without authentication.
 
-Open the URL Vite prints.
+## Security note
 
-## 4. Deploy on Vercel
-Recommended flow:
-1. Create a private GitHub repository and put these project files in it.
-2. In Vercel choose New Project and import that repository.
-3. Vercel should detect Vite automatically.
-4. Add environment variables:
-   - VITE_SUPABASE_URL
-   - VITE_SUPABASE_ANON_KEY
-5. Deploy.
+Application route protection improves the user experience and prevents unauthenticated access to the UI. Supabase Row Level Security remains the authoritative data-security boundary.
 
-Vite variables must start with `VITE_` to be available in the browser build. The Supabase publishable/anon key is intended for browser use when RLS is enabled. Never add a Supabase service_role key to a VITE_ variable.
-
-## 5. Crew accounts
-For this first cloud build, create crew Auth accounts in Supabase Authentication. Then add each user to `company_memberships` and assign foremen to projects in `project_assignments`.
-
-The next CivilBid build should add an admin invitation screen backed by a Supabase Edge Function, so you never need to manage foremen manually in the Supabase dashboard.
-
-## Notes
-- This is an early production-transition build. Test it with a small group before relying on it as the sole record system.
-- The PWA service worker caches the application shell only. Full offline report synchronization is the next field reliability feature.
+## Universal Items library
+CivilBid uses a general `items` library rather than an NJDOT-only catalog. NJDOT is one source alongside county, municipal, utility, private, and company-custom items. Run `supabase/migrations/004_general_items.sql` after the initial database/security migrations on an existing CivilBid database.
