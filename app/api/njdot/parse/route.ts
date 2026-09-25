@@ -1394,133 +1394,129 @@ if (diagnosticError) {
 }
     
     // ==========================================
+        // ==========================================
     // SELECT ONE PENDING DOCUMENT
     // ==========================================
 
-const {
-  data: documents,
-  error: documentError,
-} = await supabase
-  .from('external_source_documents')
-  .select(`
-    id,
-    contract_number,
-    title,
-    source_url,
-    processing_status,
-    created_at
-  `)
-  .eq('data_source_id', source.id)
-  .eq('document_type', 'bid_tabulation')
-  .eq('processing_status', 'pending')
-  .neq(
-    'id',
-    'bd82e45d-3a19-4380-a290-5b8f5dc48f41'
-  )
-  .order('created_at', {
-    ascending: true,
-  })
-  .limit(1)
+    const {
+      data: documents,
+      error: documentError,
+    } = await supabase
+      .from('external_source_documents')
+      .select(`
+        id,
+        contract_number,
+        title,
+        source_url,
+        processing_status,
+        created_at
+      `)
+      .eq(
+        'data_source_id',
+        source.id
+      )
+      .eq(
+        'document_type',
+        'bid_tabulation'
+      )
+      .eq(
+        'processing_status',
+        'pending'
+      )
+      .neq(
+        'id',
+        'bd82e45d-3a19-4380-a290-5b8f5dc48f41'
+      )
+      .order(
+        'created_at',
+        {
+          ascending: true,
+        }
+      )
+      .limit(1)
 
-if (documentError) {
-  throw new Error(
-    `Could not select NJDOT document: ${documentError.message}`
-  )
-}
+    if (documentError) {
+      throw new Error(
+        `Could not select NJDOT document: ${documentError.message}`
+      )
+    }
 
-const document =
-  documents?.[0] ?? null
+    const document =
+      documents?.[0] ?? null
 
-if (!document) {
-  return NextResponse.json({
-    success: true,
-    message:
-      'No pending NJDOT bid tabulations were found.',
-  })
-}
+    if (!document) {
+      return NextResponse.json({
+        success: true,
+        message:
+          'No pending NJDOT bid tabulations were found.',
+      })
+    }
 
-if (
-  request.nextUrl.searchParams.get(
-    'diagnostic'
-  ) === '1'
-) {
-  const {
-    data: exact26408,
-    error: exact26408Error,
-  } = await supabase
-    .from('external_source_documents')
-    .select(`
-      id,
-      contract_number,
-      processing_status,
-      created_at,
-      updated_at
-    `)
-    .eq(
-      'id',
-      '84156b89-9e75-45a2-9528-cf67d6736267'
-    )
-    .single()
+    // ==========================================
+    // DIAGNOSTIC MODE — NO WRITES
+    // ==========================================
 
-  return NextResponse.json({
-    success: true,
-    mode: 'selection_diagnostic_two_reads',
+    if (
+      request.nextUrl.searchParams.get(
+        'diagnostic'
+      ) === '1'
+    ) {
+      const {
+        data: exact26408,
+        error: exact26408Error,
+      } = await supabase
+        .from(
+          'external_source_documents'
+        )
+        .select(`
+          id,
+          contract_number,
+          processing_status,
+          created_at,
+          updated_at
+        `)
+        .eq(
+          'id',
+          '84156b89-9e75-45a2-9528-cf67d6736267'
+        )
+        .single()
 
-    supabase_project_ref:
-      supabaseProjectRef,
+      return NextResponse.json({
+        success: true,
 
-    exact_26408_read: {
-      data:
-        exact26408,
+        mode:
+          'selection_diagnostic_two_reads',
 
-      error:
-        exact26408Error?.message ??
-        null,
-    },
+        supabase_project_ref:
+          supabaseProjectRef,
 
-    pending_query_result: {
-      id:
-        document.id,
+        exact_26408_read: {
+          data:
+            exact26408,
 
-      contract_number:
-        document.contract_number,
+          error:
+            exact26408Error?.message ??
+            null,
+        },
 
-      processing_status:
-        document.processing_status,
+        pending_query_result: {
+          id:
+            document.id,
 
-      created_at:
-        document.created_at,
-    },
+          contract_number:
+            document.contract_number,
 
-    message:
-      'Diagnostic only. Two database reads performed. No document was parsed, imported, or updated.',
-  })
-}
-  return NextResponse.json({
-    success: true,
-    mode: 'selection_diagnostic_only',
+          processing_status:
+            document.processing_status,
 
-    supabase_project_ref:
-      supabaseProjectRef,
+          created_at:
+            document.created_at,
+        },
 
-    selected_document: {
-      id:
-        document.id,
-
-      contract_number:
-        document.contract_number,
-
-      processing_status:
-        document.processing_status,
-
-      created_at:
-        document.created_at,
-    },
-
-    message:
-      'Diagnostic only. No document was parsed or imported.',
-  })
-}
+        message:
+          'Diagnostic only. Two database reads performed. No document was parsed, imported, or updated.',
+      })
+    }
 
     // ==========================================
     // STORAGE PATH
