@@ -1444,6 +1444,58 @@ if (
     'diagnostic'
   ) === '1'
 ) {
+  const {
+    data: exact26408,
+    error: exact26408Error,
+  } = await supabase
+    .from('external_source_documents')
+    .select(`
+      id,
+      contract_number,
+      processing_status,
+      created_at,
+      updated_at
+    `)
+    .eq(
+      'id',
+      '84156b89-9e75-45a2-9528-cf67d6736267'
+    )
+    .single()
+
+  return NextResponse.json({
+    success: true,
+    mode: 'selection_diagnostic_two_reads',
+
+    supabase_project_ref:
+      supabaseProjectRef,
+
+    exact_26408_read: {
+      data:
+        exact26408,
+
+      error:
+        exact26408Error?.message ??
+        null,
+    },
+
+    pending_query_result: {
+      id:
+        document.id,
+
+      contract_number:
+        document.contract_number,
+
+      processing_status:
+        document.processing_status,
+
+      created_at:
+        document.created_at,
+    },
+
+    message:
+      'Diagnostic only. Two database reads performed. No document was parsed, imported, or updated.',
+  })
+}
   return NextResponse.json({
     success: true,
     mode: 'selection_diagnostic_only',
