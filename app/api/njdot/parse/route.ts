@@ -354,10 +354,10 @@ function parseItems(
     )
 
   const totalsIndex =
-    lines.findIndex(line =>
-      line.startsWith(
-        'Section Totals:'
-      )
+    lines.findIndex(
+      (line, index) =>
+        index > firstSectionIndex &&
+        line.startsWith('Section Totals:')
     )
 
   if (
@@ -378,9 +378,8 @@ function parseItems(
   let sectionNumber: string | null =
     null
 
-  let sectionDescription:
-    | string
-    | null = null
+  let sectionDescription: string | null =
+    null
 
   const sectionLine =
     itemLines[0]
@@ -395,21 +394,10 @@ function parseItems(
       sectionMatch[1]
 
     sectionDescription =
-      sectionMatch[2]
-        .trim() || null
+      sectionMatch[2].trim() || null
   }
 
   const items: BidItem[] = []
-
-  /*
-    Current NJDOT format observed:
-
-    0001MMG095M
-    ADJUSTMENT FACTOR
-    1,363,636.360
-    PCT
-    [bid prices]
-  */
 
   for (
     let i = 1;
@@ -434,33 +422,126 @@ function parseItems(
     const itemNumber =
       identifierMatch[2]
 
+    /*
+      Find the NEXT item. Everything between
+      this item number and the next item belongs
+      to the current item.
+
+      This is safer than assuming every NJDOT PDF
+      uses exactly five lines per item.
+    */
+
+    let nextItemIndex =
+      itemLines.length
+
+    for (
+      let j = i + 1;
+      j < itemLines.length;
+      j++
+    ) {
+      if (
+        /^(\d{4})([A-Z0-9]+)$/.test(
+          itemLines[j]
+        )
+      ) {
+        nextItemIndex = j
+        break
+      }
+    }
+
+    const block =
+      itemLines.slice(
+        i + 1,
+        nextItemIndex
+      )
+
+    /*
+      Find the quantity.
+
+      Normal NJDOT quantities look like:
+      1
+      25.000
+      1,363,636.360
+    */
+
+    const quantityIndex =
+      block.findIndex(line =>
+        /^[\d,]+(?:\.\d+)?$/.test(line)
+      )
+
+    if (quantityIndex === -1) {
+      throw new Error(
+        `Could not identify quantity for ${itemNumber}. Block: ${block.join(' | ')}`
+      )
+    }
+
+    if (quantityIndex === 0) {
+      throw new Error(
+        `Could not identify description for ${itemNumber}.`
+      )
+    }
+
     const description =
-      itemLines[i + 1]
+      block
+        .slice(0, quantityIndex)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
 
     const quantityLine =
-      itemLines[i + 2]
+      block[quantityIndex]
 
     const unit =
-      itemLines[i + 3]
+      block[quantityIndex + 1]
 
-    const priceLine =
-      itemLines[i + 4]
-
-    if (
-      !description ||
-      !quantityLine ||
-      !unit ||
-      !priceLine
-    ) {
+    if (!unit) {
       throw new Error(
-        `Incomplete item data for ${itemNumber}`
+        `Could not identify unit for ${itemNumber}.`
+      )
+    }
+
+    /*
+      Find the bidder-price line AFTER the unit.
+      Rather than assuming it is immediately next,
+      test each following line against our known
+      NJDOT bidder-price format.
+    */
+
+    let priceLine: string | null =
+      null
+
+    for (
+      let j = quantityIndex + 2;
+      j < block.length;
+      j++
+    ) {
+      const candidate =
+        block[j]
+
+      const pairRegex =
+        /(\d+\.\d{5})(\d{1,3}(?:,\d{3})+\.\d{2})/g
+
+      const matches =
+        Array.from(
+          candidate.matchAll(pairRegex)
+        )
+
+      if (
+        matches.length === bidders.length
+      ) {
+        priceLine = candidate
+        break
+      }
+    }
+
+    if (!priceLine) {
+      throw new Error(
+        `Could not identify bidder prices for ${itemNumber}. Block: ${block.join(' | ')}`
       )
     }
 
     const quantity =
-      numberToValue(
-        quantityLine
-      )
+      numberToValue(quantityLine)
 
     if (
       !Number.isFinite(quantity)
@@ -483,8 +564,7 @@ function parseItems(
       item_number:
         itemNumber,
 
-      description:
-        description.trim(),
+      description,
 
       quantity,
 
@@ -502,6 +582,13 @@ function parseItems(
 
       prices,
     })
+
+    /*
+      Skip forward to the next item.
+    */
+
+    i =
+      nextItemIndex - 1
   }
 
   if (items.length === 0) {
