@@ -303,114 +303,253 @@ function parseBidders(
 
 function parseBidPriceString(
   value: string,
-  bidderCount: number
+  bidderCount: number,
+  quantity: number
 ): ItemPrice[] {
+  const compact = value.replace(/\s+/g, '')
+
   /*
-    NJDOT concatenates each bidder's unit price
-    directly to the extended amount:
+    NJDOT concatenates:
 
-    0.843301,149,954.54
-    0.970001,322,727.27
-    1.040001,418,181.81
+    unit price + extended amount + unit price + extended amount...
 
-    Unit prices in this format have 5 decimal places.
-    Extended amounts have commas and 2 decimal places.
+    Examples:
+    0.843301,149,954.540.970001,322,727.27
+    100.00000100.0012,000.0000012,000.00
+
+    We find possible boundaries, then use:
+        quantity × unit price ≈ extension
+    to choose the most plausible interpretation.
   */
 
- const pairRegex =
-  /(\d+\.\d{5})((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/g
+  const numberPattern =
+    /\d+(?:,\d{3})*(?:\.\d+)/g
 
-  const matches =
-    Array.from(
-      value.matchAll(pairRegex)
-    )
+  const rawNumbers =
+    Array.from(compact.matchAll(numberPattern))
 
-  if (matches.length !== bidderCount) {
+  if (rawNumbers.length < bidderCount * 2) {
     throw new Error(
-      `Expected ${bidderCount} bidder price pairs but found ${matches.length}: ${value}`
+      `Not enough numeric values for ${bidderCount} bidders: ${value}`
     )
   }
 
-  return matches.map(
-    (match, index) => ({
-      bidder_rank: index + 1,
+  const prices: ItemPrice[] = []
+
+  let position = 0
+
+  for (
+    let bidderIndex = 0;
+    bidderIndex < bidderCount;
+    bidderIndex++
+  ) {
+    const remainingBidders =
+      bidderCount - bidderIndex - 1
+
+    let best:
+      | {
+          unitPrice: number
+          extension: number
+          end: number
+          difference: number
+        }
+      | null = null
+
+    /*
+      Try every possible split point after a decimal.
+      The correct pair should satisfy:
+          qty × price ≈ extension
+    */
+
+    for (
+      let split = position + 1;
+      split < compact.length;
+      split++
+    ) {
+      if (
+        compact[split - 1] < '0' ||
+        compact[split - 1] > '9'
+      ) {
+        continue
+      }
+
+      const left =
+        compact.slice(position, split)
+
+      if (
+        !/^\d+(?:\.\d+)?$/.test(left)
+      ) {
+        continue
+      }
+
+      const rest =
+        compact.slice(split)
+
+      const extensionMatch =
+        rest.match(
+          /^((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/
+        )
+
+      if (!extensionMatch) {
+        continue
+      }
+
+      const unitPrice =
+        Number(left)
+
+      const extension =
+        moneyToNumber(
+          extensionMatch[1]
+        )
+
+      if (
+        !Number.isFinite(unitPrice) ||
+        !Number.isFinite(extension)
+      ) {
+        continue
+      }
+
+      const end =
+        split +
+        extensionMatch[1].length
+
+      /*
+        Make sure enough text remains for
+        the remaining bidders.
+      */
+
+      if (
+        remainingBidders > 0 &&
+        end >= compact.length
+      ) {
+        continue
+      }
+
+      const expected =
+        quantity * unitPrice
+
+      const difference =
+        Math.abs(
+          expected - extension
+        )
+
+      if (
+        !best ||
+        difference < best.difference
+      ) {
+        best = {
+          unitPrice,
+          extension,
+          end,
+          difference,
+        }
+      }
+
+      /*
+        Exact/near-exact arithmetic is enough.
+      */
+
+      if (difference <= 0.02) {
+        break
+      }
+    }
+
+    if (!best) {
+      throw new Error(
+        `Could not split bidder ${
+          bidderIndex + 1
+        } price data: ${value}`
+      )
+    }
+
+    prices.push({
+      bidder_rank:
+        bidderIndex + 1,
 
       unit_price:
-        Number(match[1]),
+        best.unitPrice,
 
       extended_amount:
-        moneyToNumber(match[2]),
+        best.extension,
     })
-  )
+
+    position =
+      best.end
+  }
+
+  if (
+    position !== compact.length
+  ) {
+    throw new Error(
+      `Unparsed bidder-price text remained: ${compact.slice(position)} from ${value}`
+    )
+  }
+
+  return prices
 }
 
 function parseItems(
   lines: string[],
   bidders: Bidder[]
 ): BidItem[] {
-  const firstSectionIndex =
-  lines.findIndex(line =>
-    /^\d{4}.*SECTION:/i.test(line)
-  )
-
-  const totalsIndex =
-    lines.findIndex(
-      (line, index) =>
-        index > firstSectionIndex &&
-        line.startsWith('Section Totals:')
-    )
-
-  if (
-    firstSectionIndex === -1 ||
-    totalsIndex === -1
-  ) {
-    throw new Error(
-      'NJDOT item section could not be identified.'
-    )
-  }
-
-  const itemLines =
-    lines.slice(
-      firstSectionIndex,
-      totalsIndex
-    )
-
-  let sectionNumber: string | null =
-    null
-
-  let sectionDescription: string | null =
-    null
-
-  const sectionLine =
-    itemLines[0]
-
-  const sectionMatch =
-    sectionLine.match(
-      /^(\d{4})(.*?)SECTION:/i
-    )
-
-  if (sectionMatch) {
-    sectionNumber =
-      sectionMatch[1]
-
-    sectionDescription =
-      sectionMatch[2].trim() || null
-  }
-
   const items: BidItem[] = []
 
+  let currentSectionNumber:
+    | string
+    | null = null
+
+  let currentSectionDescription:
+    | string
+    | null = null
+
+  /*
+    Scan the WHOLE PDF rather than stopping
+    at the first Section Totals.
+  */
+
   for (
-    let i = 1;
-    i < itemLines.length;
+    let i = 0;
+    i < lines.length;
     i++
   ) {
-    const identifierLine =
-      itemLines[i]
+    const line =
+      lines[i]
+
+    // ------------------------------------------
+    // SECTION HEADER
+    // Example:
+    // 0001RoadwaySECTION:Cat Alt Set:...
+    // ------------------------------------------
+
+    const sectionMatch =
+      line.match(
+        /^(\d{4})(.*?)SECTION:/i
+      )
+
+    if (sectionMatch) {
+      currentSectionNumber =
+        sectionMatch[1]
+
+      currentSectionDescription =
+        sectionMatch[2]
+          .replace(/\s+/g, ' ')
+          .trim() || null
+
+      continue
+    }
+
+    // ------------------------------------------
+    // ITEM IDENTIFIER
+    //
+    // Example:
+    // 0061152006P
+    // 0061MME144M
+    // ------------------------------------------
 
     const identifierMatch =
-  identifierLine.match(
-    /^(\d{4})([A-Z]{1,6}\d+[A-Z0-9]*)$/
-  )
+      line.match(
+        /^(\d{4})([A-Z0-9]*[A-Z][A-Z0-9]*)$/
+      )
 
     if (!identifierMatch) {
       continue
@@ -423,146 +562,218 @@ function parseItems(
       identifierMatch[2]
 
     /*
-      Find the NEXT item. Everything between
-      this item number and the next item belongs
-      to the current item.
-
-      This is safer than assuming every NJDOT PDF
-      uses exactly five lines per item.
+      Reject obvious non-item strings.
     */
 
-    let nextItemIndex =
-      itemLines.length
+    if (
+      itemNumber.length < 3
+    ) {
+      continue
+    }
+
+    // ------------------------------------------
+    // BUILD ITEM BLOCK
+    // ------------------------------------------
+
+    const block: string[] = []
+
+    let j =
+      i + 1
 
     for (
-      let j = i + 1;
-      j < itemLines.length;
+      ;
+      j < lines.length;
       j++
     ) {
+      const candidate =
+        lines[j]
+
       if (
-  /^(\d{4})([A-Z]{1,6}\d+[A-Z0-9]*)$/.test(
-    itemLines[j]
-  )
-) {
-        nextItemIndex = j
+        /^(\d{4})([A-Z0-9]*[A-Z][A-Z0-9]*)$/.test(
+          candidate
+        )
+      ) {
         break
       }
+
+      if (
+        /^\d{4}.*SECTION:/i.test(
+          candidate
+        )
+      ) {
+        break
+      }
+
+      if (
+        candidate.startsWith(
+          'Section Totals:'
+        )
+      ) {
+        break
+      }
+
+      /*
+        Stop when we've clearly reached
+        the metadata/ranking portion.
+      */
+
+      if (
+        candidate ===
+          'Tabulation of Bids' ||
+        candidate.startsWith(
+          'Vendor Ranking'
+        )
+      ) {
+        break
+      }
+
+      block.push(candidate)
     }
 
-    const block =
-      itemLines.slice(
-        i + 1,
-        nextItemIndex
-      )
+    if (block.length < 4) {
+      continue
+    }
 
-    /*
-      Find the quantity.
-
-      Normal NJDOT quantities look like:
-      1
-      25.000
-      1,363,636.360
-    */
+    // ------------------------------------------
+    // QUANTITY
+    // ------------------------------------------
 
     const quantityIndex =
-  block.findIndex(line =>
-    /^[\d,]+(?:\.\d+)?$/.test(line) ||
-    /^\(\d+(?:\.\d+)?\)$/.test(line)
-  )
-   
-    if (quantityIndex === -1) {
-      throw new Error(
-        `Could not identify quantity for ${itemNumber}. Block: ${block.join(' | ')}`
+      block.findIndex(value =>
+        /^[\d,]+(?:\.\d+)?$/.test(
+          value
+        ) ||
+        /^\(\d+(?:\.\d+)?\)$/.test(
+          value
+        )
       )
-    }
 
-    if (quantityIndex === 0) {
-      throw new Error(
-        `Could not identify description for ${itemNumber}.`
-      )
+    if (quantityIndex <= 0) {
+      continue
     }
-
-    const description =
-      block
-        .slice(0, quantityIndex)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
 
     const quantityLine =
       block[quantityIndex]
 
-    const unit =
-      block[quantityIndex + 1]
-
-    if (!unit) {
-      throw new Error(
-        `Could not identify unit for ${itemNumber}.`
-      )
-    }
-
-    /*
-      Find the bidder-price line AFTER the unit.
-      Rather than assuming it is immediately next,
-      test each following line against our known
-      NJDOT bidder-price format.
-    */
-
-    let priceLine: string | null =
-      null
-
-    for (
-      let j = quantityIndex + 2;
-      j < block.length;
-      j++
-    ) {
-      const candidate =
-        block[j]
-
-      const pairRegex =
-  /(\d+\.\d{5})((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/g
-
-      const matches =
-        Array.from(
-          candidate.matchAll(pairRegex)
-        )
-
-      if (
-        matches.length === bidders.length
-      ) {
-        priceLine = candidate
-        break
-      }
-    }
-
-    if (!priceLine) {
-      throw new Error(
-        `Could not identify bidder prices for ${itemNumber}. Block: ${block.join(' | ')}`
-      )
-    }
-
-   const quantity =
-  /^\(\d+(?:\.\d+)?\)$/.test(quantityLine)
-    ? Number(
+    const quantity =
+      /^\(\d+(?:\.\d+)?\)$/.test(
         quantityLine
-          .replace('(', '')
-          .replace(')', '')
       )
-    : numberToValue(quantityLine)
+        ? Number(
+            quantityLine
+              .replace(/[()]/g, '')
+          )
+        : numberToValue(
+            quantityLine
+          )
 
     if (
       !Number.isFinite(quantity)
     ) {
-      throw new Error(
-        `Invalid quantity for ${itemNumber}: ${quantityLine}`
-      )
+      continue
     }
 
-    const prices =
-      parseBidPriceString(
-        priceLine,
-        bidders.length
+    // ------------------------------------------
+    // DESCRIPTION
+    // ------------------------------------------
+
+    const description =
+      block
+        .slice(
+          0,
+          quantityIndex
+        )
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+
+    if (!description) {
+      continue
+    }
+
+    // ------------------------------------------
+    // UNIT
+    // ------------------------------------------
+
+    const unit =
+      block[
+        quantityIndex + 1
+      ]
+
+    if (!unit) {
+      continue
+    }
+
+    // ------------------------------------------
+    // FIND PRICE LINE
+    // ------------------------------------------
+
+    let parsedPrices:
+      | ItemPrice[]
+      | null = null
+
+    let priceError:
+      | Error
+      | null = null
+
+    for (
+      let k =
+        quantityIndex + 2;
+      k < block.length;
+      k++
+    ) {
+      const candidate =
+        block[k]
+
+      /*
+        Price rows contain decimals.
+      */
+
+      if (
+        !/\d+\.\d+/.test(
+          candidate
+        )
+      ) {
+        continue
+      }
+
+      try {
+        const result =
+          parseBidPriceString(
+            candidate,
+            bidders.length,
+            quantity
+          )
+
+        if (
+          result.length ===
+          bidders.length
+        ) {
+          parsedPrices =
+            result
+
+          break
+        }
+      } catch (error) {
+        priceError =
+          error instanceof Error
+            ? error
+            : new Error(
+                String(error)
+              )
+      }
+    }
+
+    if (!parsedPrices) {
+      throw new Error(
+        `Could not parse prices for ${itemNumber}. ` +
+        `Block: ${block.join(' | ')}. ` +
+        `Last parser error: ${
+          priceError?.message ||
+          'none'
+        }`
       )
+    }
 
     items.push({
       line_number:
@@ -579,28 +790,29 @@ function parseItems(
         unit.trim(),
 
       section_number:
-        sectionNumber,
+        currentSectionNumber,
 
       section_description:
-        sectionDescription,
+        currentSectionDescription,
 
       engineer_estimate_unit_price:
         null,
 
-      prices,
+      prices:
+        parsedPrices,
     })
 
     /*
-      Skip forward to the next item.
+      Jump to where this item's block ended.
     */
 
     i =
-      nextItemIndex - 1
+      j - 1
   }
 
   if (items.length === 0) {
     throw new Error(
-      'No bid items were parsed.'
+      'No NJDOT bid items were parsed.'
     )
   }
 
