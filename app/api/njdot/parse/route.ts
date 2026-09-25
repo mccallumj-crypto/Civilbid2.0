@@ -465,10 +465,11 @@ function parseItems(
     */
 
     const quantityIndex =
-      block.findIndex(line =>
-        /^[\d,]+(?:\.\d+)?$/.test(line)
-      )
-
+  block.findIndex(line =>
+    /^[\d,]+(?:\.\d+)?$/.test(line) ||
+    /^\(\d+(?:\.\d+)?\)$/.test(line)
+  )
+   
     if (quantityIndex === -1) {
       throw new Error(
         `Could not identify quantity for ${itemNumber}. Block: ${block.join(' | ')}`
@@ -540,8 +541,14 @@ function parseItems(
       )
     }
 
-    const quantity =
-      numberToValue(quantityLine)
+   const quantity =
+  /^\(\d+(?:\.\d+)?\)$/.test(quantityLine)
+    ? Number(
+        quantityLine
+          .replace('(', '')
+          .replace(')', '')
+      )
+    : numberToValue(quantityLine)
 
     if (
       !Number.isFinite(quantity)
