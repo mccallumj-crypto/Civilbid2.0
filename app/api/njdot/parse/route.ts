@@ -741,33 +741,29 @@ function validateParsedContract(
 ) {
   const errors: string[] = []
 
-  if (
-    !parsed.contract_number
-  ) {
+  if (!parsed.contract_number) {
     errors.push(
       'Missing contract number.'
     )
   }
 
-  if (
-    parsed.bidders.length === 0
-  ) {
+  if (parsed.bidders.length === 0) {
     errors.push(
       'No bidders found.'
     )
   }
 
-  if (
-    parsed.items.length === 0
-  ) {
+  if (parsed.items.length === 0) {
     errors.push(
       'No items found.'
     )
   }
 
-  for (
-    const item of parsed.items
-  ) {
+  // ==========================================
+  // ITEM-LEVEL VALIDATION
+  // ==========================================
+
+  for (const item of parsed.items) {
     if (
       item.prices.length !==
       parsed.bidders.length
@@ -775,11 +771,11 @@ function validateParsedContract(
       errors.push(
         `${item.item_number}: ${item.prices.length} prices for ${parsed.bidders.length} bidders.`
       )
+
+      continue
     }
 
-    for (
-      const price of item.prices
-    ) {
+    for (const price of item.prices) {
       const expected =
         item.quantity *
         price.unit_price
@@ -790,29 +786,90 @@ function validateParsedContract(
           price.extended_amount
         )
 
-      /*
-        Allow small rounding differences.
-        Some NJDOT items may use unusual
-        unit conventions, so this is
-        validation rather than an
-        automatic rejection threshold.
-      */
-
-      if (
-        difference > 1.00
-      ) {
+      if (difference > 1.00) {
         errors.push(
-          `${item.item_number} bidder ${price.bidder_rank}: quantity × unit price differs from extension by $${difference.toFixed(2)}.`
+          `${item.item_number} bidder ${price.bidder_rank}: ` +
+          `quantity × unit price differs from extension by ` +
+          `$${difference.toFixed(2)}.`
         )
       }
     }
   }
+
+  // ==========================================
+  // CONTRACT-TOTAL VALIDATION
+  // ==========================================
+
+  const bidderTotals =
+    parsed.bidders.map(bidder => {
+      const calculatedTotal =
+        parsed.items.reduce(
+          (sum, item) => {
+            const price =
+              item.prices.find(
+                p =>
+                  p.bidder_rank ===
+                  bidder.rank
+              )
+
+            return (
+              sum +
+              (price?.extended_amount ?? 0)
+            )
+          },
+          0
+        )
+
+      const difference =
+        Math.abs(
+          calculatedTotal -
+          bidder.total_bid
+        )
+
+      const matches =
+        difference <= 1.00
+
+      if (!matches) {
+        errors.push(
+          `Bidder ${bidder.rank} (${bidder.name}): ` +
+          `item extensions total $${calculatedTotal.toFixed(2)}, ` +
+          `but official bid total is $${bidder.total_bid.toFixed(2)} ` +
+          `(difference $${difference.toFixed(2)}).`
+        )
+      }
+
+      return {
+        bidder_rank:
+          bidder.rank,
+
+        bidder_name:
+          bidder.name,
+
+        calculated_item_total:
+          Number(
+            calculatedTotal.toFixed(2)
+          ),
+
+        official_bid_total:
+          bidder.total_bid,
+
+        difference:
+          Number(
+            difference.toFixed(2)
+          ),
+
+        matches,
+      }
+    })
 
   return {
     valid:
       errors.length === 0,
 
     errors,
+
+    bidder_totals:
+      bidderTotals,
   }
 }
 
