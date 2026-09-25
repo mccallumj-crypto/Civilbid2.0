@@ -306,183 +306,100 @@ function parseBidPriceString(
   bidderCount: number,
   quantity: number
 ): ItemPrice[] {
-  const compact = value.replace(/\s+/g, '')
+  const compact =
+    value.replace(/\s+/g, '')
 
   /*
-    NJDOT concatenates:
+    NJDOT bidder-price rows are concatenated as:
 
-    unit price + extended amount + unit price + extended amount...
+    UNIT PRICE + EXTENDED AMOUNT
+
+    Unit price:
+      5 decimal places
+
+    Extended amount:
+      2 decimal places
 
     Examples:
-    0.843301,149,954.540.970001,322,727.27
-    100.00000100.0012,000.0000012,000.00
 
-    We find possible boundaries, then use:
-        quantity × unit price ≈ extension
-    to choose the most plausible interpretation.
+    20,000.0000020,000.00
+    60,000.0000060,000.00
+
+    100.00000100.00
+    12,000.0000012,000.00
+
+    0.843301,149,954.54
   */
 
-  const numberPattern =
-    /\d+(?:,\d{3})*(?:\.\d+)/g
+  const pairRegex =
+    /((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{5})((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/g
 
-  const rawNumbers =
-    Array.from(compact.matchAll(numberPattern))
-
-  if (rawNumbers.length < bidderCount * 2) {
-    throw new Error(
-      `Not enough numeric values for ${bidderCount} bidders: ${value}`
+  const matches =
+    Array.from(
+      compact.matchAll(pairRegex)
     )
-  }
-
-  const prices: ItemPrice[] = []
-
-  let position = 0
-
-  for (
-    let bidderIndex = 0;
-    bidderIndex < bidderCount;
-    bidderIndex++
-  ) {
-    const remainingBidders =
-      bidderCount - bidderIndex - 1
-
-    let best:
-      | {
-          unitPrice: number
-          extension: number
-          end: number
-          difference: number
-        }
-      | null = null
-
-    /*
-      Try every possible split point after a decimal.
-      The correct pair should satisfy:
-          qty × price ≈ extension
-    */
-
-    for (
-      let split = position + 1;
-      split < compact.length;
-      split++
-    ) {
-      if (
-        compact[split - 1] < '0' ||
-        compact[split - 1] > '9'
-      ) {
-        continue
-      }
-
-      const left =
-        compact.slice(position, split)
-
-      if (
-        !/^\d+(?:\.\d+)?$/.test(left)
-      ) {
-        continue
-      }
-
-      const rest =
-        compact.slice(split)
-
-      const extensionMatch =
-        rest.match(
-          /^((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/
-        )
-
-      if (!extensionMatch) {
-        continue
-      }
-
-      const unitPrice =
-        Number(left)
-
-      const extension =
-        moneyToNumber(
-          extensionMatch[1]
-        )
-
-      if (
-        !Number.isFinite(unitPrice) ||
-        !Number.isFinite(extension)
-      ) {
-        continue
-      }
-
-      const end =
-        split +
-        extensionMatch[1].length
-
-      /*
-        Make sure enough text remains for
-        the remaining bidders.
-      */
-
-      if (
-        remainingBidders > 0 &&
-        end >= compact.length
-      ) {
-        continue
-      }
-
-      const expected =
-        quantity * unitPrice
-
-      const difference =
-        Math.abs(
-          expected - extension
-        )
-
-      if (
-        !best ||
-        difference < best.difference
-      ) {
-        best = {
-          unitPrice,
-          extension,
-          end,
-          difference,
-        }
-      }
-
-      /*
-        Exact/near-exact arithmetic is enough.
-      */
-
-      if (difference <= 0.02) {
-        break
-      }
-    }
-
-    if (!best) {
-      throw new Error(
-        `Could not split bidder ${
-          bidderIndex + 1
-        } price data: ${value}`
-      )
-    }
-
-    prices.push({
-      bidder_rank:
-        bidderIndex + 1,
-
-      unit_price:
-        best.unitPrice,
-
-      extended_amount:
-        best.extension,
-    })
-
-    position =
-      best.end
-  }
 
   if (
-    position !== compact.length
+    matches.length !==
+    bidderCount
   ) {
     throw new Error(
-      `Unparsed bidder-price text remained: ${compact.slice(position)} from ${value}`
+      `Expected ${bidderCount} bidder price pairs but found ${matches.length}: ${value}`
     )
+  }
+
+  const prices: ItemPrice[] =
+    matches.map(
+      (match, index) => {
+        const unitPrice =
+          moneyToNumber(
+            match[1]
+          )
+
+        const extendedAmount =
+          moneyToNumber(
+            match[2]
+          )
+
+        return {
+          bidder_rank:
+            index + 1,
+
+          unit_price:
+            unitPrice,
+
+          extended_amount:
+            extendedAmount,
+        }
+      }
+    )
+
+  /*
+    Arithmetic validation here gives us
+    another safeguard against a regex
+    accidentally splitting the row wrong.
+  */
+
+  for (
+    const price of prices
+  ) {
+    const expected =
+      quantity *
+      price.unit_price
+
+    const difference =
+      Math.abs(
+        expected -
+        price.extended_amount
+      )
+
+    if (difference > 1.00) {
+      throw new Error(
+        `Price arithmetic failed for bidder ${price.bidder_rank}. ` +
+        `Quantity ${quantity} × unit price ${price.unit_price} = ${expected.toFixed(2)}, ` +
+        `but NJDOT extension is ${price.extended_amount.toFixed(2)}.`
+      )
+    }
   }
 
   return prices
