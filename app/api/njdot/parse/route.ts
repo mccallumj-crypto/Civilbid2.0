@@ -873,6 +873,442 @@ function validateParsedContract(
   }
 }
 
+async function importValidatedContract(
+  supabase: any,
+  source: any,
+  document: any,
+  parsed: ParsedContract,
+  validation: any
+) {
+  // ==========================================
+  // SAFETY GATE
+  // ==========================================
+
+  if (!validation.valid) {
+    throw new Error(
+      'Import blocked because contract validation failed.'
+    )
+  }
+
+  // For our first controlled import, only allow 26408.
+  if (parsed.contract_number !== '26408') {
+    throw new Error(
+      `Test import blocked for contract ${parsed.contract_number}. ` +
+      `Only contract 26408 is currently allowed.`
+    )
+  }
+
+  // ==========================================
+  // CONTRACT
+  // ==========================================
+
+  const {
+    data: contract,
+    error: contractError,
+  } = await supabase
+    .from('bid_contracts')
+    .upsert(
+      {
+        source_id:
+          source.id,
+
+        source_document_id:
+          document.id,
+
+        contract_number:
+          parsed.contract_number,
+
+        project_name:
+          parsed.project_name,
+
+        letting_date:
+          parsed.letting_date,
+
+        call_order:
+          parsed.call_order,
+
+        district:
+          parsed.district,
+
+        contract_time:
+          parsed.contract_time,
+
+        updated_at:
+          new Date().toISOString(),
+      },
+      {
+        onConflict:
+          'source_id,contract_number',
+      }
+    )
+    .select('id')
+    .single()
+
+  if (contractError) {
+    throw new Error(
+      `Contract import failed: ${contractError.message}`
+    )
+  }
+
+  const contractId =
+    contract.id
+
+  // ==========================================
+  // COUNTIES
+  // ==========================================
+
+  if (parsed.counties.length > 0) {
+    const countyRows =
+      parsed.counties.map(
+        county => ({
+          contract_id:
+            contractId,
+
+          county,
+        })
+      )
+
+    const {
+      error: countyError,
+    } = await supabase
+      .from(
+        'bid_contract_counties'
+      )
+      .upsert(
+        countyRows,
+        {
+          onConflict:
+            'contract_id,county',
+
+          ignoreDuplicates:
+            true,
+        }
+      )
+
+    if (countyError) {
+      throw new Error(
+        `County import failed: ${countyError.message}`
+      )
+    }
+  }
+
+  // ==========================================
+  // BIDDERS
+  // ==========================================
+
+  const bidderRows =
+    parsed.bidders.map(
+      bidder => ({
+        contract_id:
+          contractId,
+
+        bidder_name:
+          bidder.name,
+
+        bidder_rank:
+          bidder.rank,
+
+        total_bid:
+          bidder.total_bid,
+
+        percent_of_low_bid:
+          bidder.percent_of_low_bid,
+
+        is_low_bidder:
+          bidder.is_low_bidder,
+
+        updated_at:
+          new Date().toISOString(),
+      })
+    )
+
+  const {
+    data: importedBidders,
+    error: bidderError,
+  } = await supabase
+    .from(
+      'bid_contract_bidders'
+    )
+    .upsert(
+      bidderRows,
+      {
+        onConflict:
+          'contract_id,bidder_name',
+      }
+    )
+    .select(
+      'id,bidder_name,bidder_rank'
+    )
+
+  if (bidderError) {
+    throw new Error(
+      `Bidder import failed: ${bidderError.message}`
+    )
+  }
+
+  if (
+    !importedBidders ||
+    importedBidders.length !==
+      parsed.bidders.length
+  ) {
+    throw new Error(
+      'Bidder import returned an unexpected number of records.'
+    )
+  }
+
+  const bidderIdByRank =
+    new Map<number, string>()
+
+  for (
+    const bidder of
+      importedBidders
+  ) {
+    bidderIdByRank.set(
+      bidder.bidder_rank,
+      bidder.id
+    )
+  }
+
+  // ==========================================
+  // ITEMS
+  // ==========================================
+
+  const itemRows =
+    parsed.items.map(
+      item => ({
+        contract_id:
+          contractId,
+
+        line_number:
+          item.line_number,
+
+        item_number:
+          item.item_number,
+
+        description:
+          item.description,
+
+        quantity:
+          item.quantity,
+
+        unit:
+          item.unit,
+
+        section_number:
+          item.section_number,
+
+        section_description:
+          item.section_description,
+
+        engineer_estimate_unit_price:
+          item.engineer_estimate_unit_price,
+
+        updated_at:
+          new Date().toISOString(),
+      })
+    )
+
+  const {
+    data: importedItems,
+    error: itemError,
+  } = await supabase
+    .from(
+      'bid_contract_items'
+    )
+    .upsert(
+      itemRows,
+      {
+        onConflict:
+          'contract_id,item_number,line_number',
+      }
+    )
+    .select(
+      'id,line_number,item_number'
+    )
+
+  if (itemError) {
+    throw new Error(
+      `Item import failed: ${itemError.message}`
+    )
+  }
+
+  if (
+    !importedItems ||
+    importedItems.length !==
+      parsed.items.length
+  ) {
+    throw new Error(
+      `Item import returned ${
+        importedItems?.length ?? 0
+      } records; expected ${
+        parsed.items.length
+      }.`
+    )
+  }
+
+  const itemIdMap =
+    new Map<string, string>()
+
+  for (
+    const item of importedItems
+  ) {
+    const key =
+      `${item.line_number}::${item.item_number}`
+
+    itemIdMap.set(
+      key,
+      item.id
+    )
+  }
+
+  // ==========================================
+  // BID ITEM PRICES
+  // ==========================================
+
+  const priceRows: any[] =
+    []
+
+  for (
+    const item of parsed.items
+  ) {
+    const itemKey =
+      `${item.line_number}::${item.item_number}`
+
+    const contractItemId =
+      itemIdMap.get(
+        itemKey
+      )
+
+    if (!contractItemId) {
+      throw new Error(
+        `Could not find imported item ID for ${item.line_number}/${item.item_number}.`
+      )
+    }
+
+    for (
+      const price of item.prices
+    ) {
+      const bidderId =
+        bidderIdByRank.get(
+          price.bidder_rank
+        )
+
+      if (!bidderId) {
+        throw new Error(
+          `Could not find bidder ID for rank ${price.bidder_rank}.`
+        )
+      }
+
+      priceRows.push({
+        contract_item_id:
+          contractItemId,
+
+        bidder_id:
+          bidderId,
+
+        unit_price:
+          price.unit_price,
+
+        extended_amount:
+          price.extended_amount,
+      })
+    }
+  }
+
+  const {
+    data: importedPrices,
+    error: priceError,
+  } = await supabase
+    .from(
+      'bid_item_prices'
+    )
+    .upsert(
+      priceRows,
+      {
+        onConflict:
+          'contract_item_id,bidder_id',
+      }
+    )
+    .select('id')
+
+  if (priceError) {
+    throw new Error(
+      `Bid item price import failed: ${priceError.message}`
+    )
+  }
+
+  const expectedPriceCount =
+    parsed.items.length *
+    parsed.bidders.length
+
+  if (
+    !importedPrices ||
+    importedPrices.length !==
+      expectedPriceCount
+  ) {
+    throw new Error(
+      `Price import returned ${
+        importedPrices?.length ?? 0
+      } records; expected ${expectedPriceCount}.`
+    )
+  }
+
+  // ==========================================
+  // MARK SOURCE DOCUMENT PROCESSED
+  // ==========================================
+
+  const {
+    error: processedError,
+  } = await supabase
+    .from(
+      'external_source_documents'
+    )
+    .update({
+      processing_status:
+        'processed',
+
+      updated_at:
+        new Date().toISOString(),
+    })
+    .eq(
+      'id',
+      document.id
+    )
+
+  if (processedError) {
+    throw new Error(
+      `Could not mark source document processed: ${processedError.message}`
+    )
+  }
+
+  // ==========================================
+  // RESULT
+  // ==========================================
+
+  return {
+    contract_id:
+      contractId,
+
+    contract_number:
+      parsed.contract_number,
+
+    counties_imported:
+      parsed.counties.length,
+
+    bidders_imported:
+      importedBidders.length,
+
+    items_imported:
+      importedItems.length,
+
+    prices_imported:
+      importedPrices.length,
+
+    source_document_status:
+      'processed',
+  }
+}
+
 export async function GET() {
   try {
     const supabaseUrl =
@@ -1173,15 +1609,23 @@ if (!document) {
         parsed
       )
 
+    const importResult =
+  await importValidatedContract(
+    supabase,
+    source,
+    document,
+    parsed,
+    validation
+  )
+
     // ==========================================
     // RETURN ONLY — NO DB WRITES
     // ==========================================
 
     return NextResponse.json({
   success: true,
-
-  mode:
-    'structured_parse_test',
+  mode: 'validated_import_test',
+  import: importResult,
 
 diagnostics: {
   supabase_project_ref:
