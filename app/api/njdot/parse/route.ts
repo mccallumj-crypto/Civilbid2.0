@@ -601,6 +601,11 @@ export async function GET() {
     const serviceRoleKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY
 
+    const supabaseProjectRef =
+  supabaseUrl
+    ?.replace('https://', '')
+    .split('.')[0]
+    
     if (!supabaseUrl) {
       throw new Error(
         'NEXT_PUBLIC_SUPABASE_URL is not configured.'
@@ -882,10 +887,15 @@ export async function GET() {
     // ==========================================
 
     return NextResponse.json({
-      success: true,
+  success: true,
 
-      mode:
-        'structured_parse_test',
+  mode:
+    'structured_parse_test',
+
+  diagnostics: {
+    supabase_project_ref:
+      supabaseProjectRef,
+  },
 
       document: {
         id:
