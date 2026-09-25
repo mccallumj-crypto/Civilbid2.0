@@ -538,7 +538,35 @@ export default function ItemsPage() {
     requiredFields.every(field =>
       Boolean(mapping[field])
     )
+  
+async function syncNJDOT() {
+  setError('')
 
+  const { data, error: syncError } =
+    await supabase.functions.invoke('sync-njdot')
+
+  if (syncError) {
+    setError(`NJDOT sync failed: ${syncError.message}`)
+    return
+  }
+
+  if (!data?.success) {
+    setError(
+      `NJDOT sync failed: ${data?.error || 'Unknown error'}`
+    )
+    return
+  }
+
+  alert(
+    `NJDOT Sync Complete
+
+Bid tabulations discovered: ${data.bid_tabulations_discovered}
+New documents: ${data.new_documents}
+Already known: ${data.existing_documents}
+Failed: ${data.failed_documents}`
+  )
+}
+  
   async function runImport() {
     if (!fileName) return
 
@@ -623,14 +651,27 @@ export default function ItemsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setShowImport(!showImport)
-            setError('')
-          }}
-        >
-          Import Data
-        </button>
+   <div
+  style={{
+    display: 'flex',
+    gap: 10
+  }}
+>
+  <button
+    onClick={syncNJDOT}
+  >
+    Sync NJDOT
+  </button>
+
+  <button
+    onClick={() => {
+      setShowImport(!showImport)
+      setError('')
+    }}
+  >
+    Import Data
+  </button>
+</div>
       </div>
 
       {showImport && (
