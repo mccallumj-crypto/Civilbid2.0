@@ -306,88 +306,42 @@ function parseBidPriceString(
   bidderCount: number
 ): ItemPrice[] {
   /*
-    NJDOT's PDF text layer concatenates values:
+    NJDOT concatenates each bidder's unit price
+    directly to the extended amount:
 
-    0.843301,149,954.540.970001,322,727.271.040001,418,181.81
+    0.843301,149,954.54
+    0.970001,322,727.27
+    1.040001,418,181.81
 
-    Each pair is:
-      unit price
-      extended amount
-
-    The extended amount always has:
-      commas + exactly two decimal places.
-
-    We use those money values as anchors.
+    Unit prices in this format have 5 decimal places.
+    Extended amounts have commas and 2 decimal places.
   */
 
-  const amountRegex =
-    /(\d{1,3}(?:,\d{3})*\.\d{2})/g
+  const pairRegex =
+    /(\d+\.\d{5})(\d{1,3}(?:,\d{3})+\.\d{2})/g
 
   const matches =
     Array.from(
-      value.matchAll(amountRegex)
+      value.matchAll(pairRegex)
     )
 
-  if (
-    matches.length !== bidderCount
-  ) {
+  if (matches.length !== bidderCount) {
     throw new Error(
-      `Expected ${bidderCount} extended amounts but found ${matches.length}: ${value}`
+      `Expected ${bidderCount} bidder price pairs but found ${matches.length}: ${value}`
     )
   }
 
-  const prices: ItemPrice[] = []
+  return matches.map(
+    (match, index) => ({
+      bidder_rank: index + 1,
 
-  let previousEnd = 0
+      unit_price:
+        Number(match[1]),
 
-  for (
-    let i = 0;
-    i < matches.length;
-    i++
-  ) {
-    const match =
-      matches[i]
-
-    const amountStart =
-      match.index ?? 0
-
-    const prefix =
-      value
-        .slice(
-          previousEnd,
-          amountStart
-        )
-        .trim()
-
-    const unitPriceMatch =
-      prefix.match(
-        /(\d+(?:\.\d+)?)$/
-      )
-
-    if (!unitPriceMatch) {
-      throw new Error(
-        `Could not identify unit price before ${match[0]} in ${value}`
-      )
-    }
-
-    const unitPrice =
-      Number(
-        unitPriceMatch[1]
-      )
-
-    prices.push({
-      bidder_rank: i + 1,
-      unit_price: unitPrice,
       extended_amount:
-        moneyToNumber(match[0]),
+        moneyToNumber(match[2]),
     })
-
-    previousEnd =
-      amountStart +
-      match[0].length
-  }
-
-  return prices
+  )
 }
 
 function parseItems(
