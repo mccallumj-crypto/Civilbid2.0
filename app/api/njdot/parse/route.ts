@@ -890,13 +890,7 @@ async function importValidatedContract(
     )
   }
 
-  // For our first controlled import, only allow 26408.
-  if (parsed.contract_number !== '26408') {
-    throw new Error(
-      `Test import blocked for contract ${parsed.contract_number}. ` +
-      `Only contract 26408 is currently allowed.`
-    )
-  }
+
 
   // ==========================================
   // CONTRACT
@@ -1664,8 +1658,8 @@ diagnostics: {
           normalizedText.length,
       },
 
-      message:
-        'Structured NJDOT parsing completed. No database records were changed.',
+     message:
+  'NJDOT contract parsed, validated, and imported successfully.'
     })
   } catch (error) {
     console.error(
