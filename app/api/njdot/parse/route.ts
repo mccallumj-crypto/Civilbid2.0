@@ -349,9 +349,9 @@ function parseItems(
   bidders: Bidder[]
 ): BidItem[] {
   const firstSectionIndex =
-    lines.findIndex(line =>
-      /SECTION:/i.test(line)
-    )
+  lines.findIndex(line =>
+    /^\d{4}.*SECTION:/i.test(line)
+  )
 
   const totalsIndex =
     lines.findIndex(
@@ -408,9 +408,9 @@ function parseItems(
       itemLines[i]
 
     const identifierMatch =
-      identifierLine.match(
-        /^(\d{4})([A-Z0-9]+)$/
-      )
+  identifierLine.match(
+    /^(\d{4})([A-Z]{1,6}\d+[A-Z0-9]*)$/
+  )
 
     if (!identifierMatch) {
       continue
@@ -440,10 +440,10 @@ function parseItems(
       j++
     ) {
       if (
-        /^(\d{4})([A-Z0-9]+)$/.test(
-          itemLines[j]
-        )
-      ) {
+  /^(\d{4})([A-Z]{1,6}\d+[A-Z0-9]*)$/.test(
+    itemLines[j]
+  )
+) {
         nextItemIndex = j
         break
       }
