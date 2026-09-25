@@ -1,4 +1,7 @@
-import { NextResponse } from 'next/server'
+import {
+  NextRequest,
+  NextResponse,
+} from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const pdf = require('pdf-parse/lib/pdf-parse.js')
@@ -1303,7 +1306,9 @@ async function importValidatedContract(
   }
 }
 
-export async function GET() {
+export async function GET(
+  request: NextRequest
+) {
   try {
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -1426,9 +1431,6 @@ if (documentError) {
 const document =
   documents?.[0] ?? null
 
-    const document =
-  documents?.[0] ?? null
-
 if (!document) {
   return NextResponse.json({
     success: true,
@@ -1436,12 +1438,35 @@ if (!document) {
       'No pending NJDOT bid tabulations were found.',
   })
 }
-    
-if (!document) {
+
+if (
+  request.nextUrl.searchParams.get(
+    'diagnostic'
+  ) === '1'
+) {
   return NextResponse.json({
     success: true,
+    mode: 'selection_diagnostic_only',
+
+    supabase_project_ref:
+      supabaseProjectRef,
+
+    selected_document: {
+      id:
+        document.id,
+
+      contract_number:
+        document.contract_number,
+
+      processing_status:
+        document.processing_status,
+
+      created_at:
+        document.created_at,
+    },
+
     message:
-      'No pending NJDOT bid tabulations were found.',
+      'Diagnostic only. No document was parsed or imported.',
   })
 }
 
