@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 
 // pdf-parse 1.x does not ship useful TypeScript definitions.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdf = require('pdf-parse')
+const pdf = require('pdf-parse/lib/pdf-parse.js')
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
