@@ -1426,26 +1426,16 @@ if (documentError) {
 const document =
   documents?.[0] ?? null
 
-    return NextResponse.json({
-  success: true,
-  mode: 'selection_diagnostic_only',
-  supabase_project_ref:
-    supabaseProjectRef,
-  selected_document:
-    document
-      ? {
-          id: document.id,
-          contract_number:
-            document.contract_number,
-          processing_status:
-            document.processing_status,
-          created_at:
-            document.created_at,
-        }
-      : null,
-  message:
-    'Diagnostic only. No document was parsed or imported.',
-})
+    const document =
+  documents?.[0] ?? null
+
+if (!document) {
+  return NextResponse.json({
+    success: true,
+    message:
+      'No pending NJDOT bid tabulations were found.',
+  })
+}
     
 if (!document) {
   return NextResponse.json({
