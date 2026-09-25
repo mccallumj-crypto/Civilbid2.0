@@ -317,8 +317,8 @@ function parseBidPriceString(
     Extended amounts have commas and 2 decimal places.
   */
 
-  const pairRegex =
-    /(\d+\.\d{5})(\d{1,3}(?:,\d{3})+\.\d{2})/g
+ const pairRegex =
+  /(\d+\.\d{5})((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/g
 
   const matches =
     Array.from(
@@ -519,7 +519,7 @@ function parseItems(
         block[j]
 
       const pairRegex =
-        /(\d+\.\d{5})(\d{1,3}(?:,\d{3})+\.\d{2})/g
+  /(\d+\.\d{5})((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})/g
 
       const matches =
         Array.from(
