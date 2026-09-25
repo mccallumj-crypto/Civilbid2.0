@@ -1624,9 +1624,13 @@ if (!document) {
 diagnostics: {
   supabase_project_ref:
     supabaseProjectRef,
-
   database_row:
     diagnosticRow,
+  selected_document: {
+    id: document.id,
+    contract_number: document.contract_number,
+    processing_status: document.processing_status,
+  },
 },
 
       document: {
