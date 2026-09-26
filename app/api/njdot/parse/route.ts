@@ -637,7 +637,22 @@ function parseItems(
   lines: string[],
   bidders: Bidder[]
 ): BidItem[] {
-  const items: BidItem[] = []
+  /*
+    NJDOT can split bidder columns across
+    multiple groups/pages.
+
+    Example:
+
+      group 1 = bidders 1, 2, 3
+      group 2 = bidder 4
+
+    The same item rows are repeated for each
+    bidder group. We parse each occurrence and
+    merge prices by line number + item number.
+  */
+
+  const itemMap =
+    new Map<string, BidItem>()
 
   let currentSectionNumber:
     | string
@@ -648,9 +663,18 @@ function parseItems(
     | null = null
 
   /*
-    Scan the WHOLE PDF rather than stopping
-    at the first Section Totals.
+    The bidder ranks currently represented by
+    the active NJDOT table.
+
+    Header lines are extracted like:
+
+      (1) COLONNELLI BROTHERS,
+      (2) IEW CONSTRUCTION
+      (3) JOSEPH M. SANZARI, INC.
   */
+
+  let currentBidderRanks:
+    number[] = []
 
   for (
     let i = 0;
@@ -661,9 +685,58 @@ function parseItems(
       lines[i]
 
     // ------------------------------------------
+    // BIDDER HEADER
+    // ------------------------------------------
+
+    const bidderHeaderMatch =
+      line.match(
+        /^\((\d+)\)\s+/
+      )
+
+    if (bidderHeaderMatch) {
+      const rank =
+        Number(
+          bidderHeaderMatch[1]
+        )
+
+      if (
+        bidders.some(
+          bidder =>
+            bidder.rank === rank
+        )
+      ) {
+        /*
+          A lower/equal rank after we've already
+          collected ranks indicates a repeated
+          page header / new table header.
+        */
+
+        if (
+          currentBidderRanks.length > 0 &&
+          rank <=
+            currentBidderRanks[
+              currentBidderRanks.length - 1
+            ]
+        ) {
+          currentBidderRanks = []
+        }
+
+        if (
+          !currentBidderRanks.includes(
+            rank
+          )
+        ) {
+          currentBidderRanks.push(
+            rank
+          )
+        }
+      }
+
+      continue
+    }
+
+    // ------------------------------------------
     // SECTION HEADER
-    // Example:
-    // 0001RoadwaySECTION:Cat Alt Set:...
     // ------------------------------------------
 
     const sectionMatch =
@@ -685,10 +758,6 @@ function parseItems(
 
     // ------------------------------------------
     // ITEM IDENTIFIER
-    //
-    // Example:
-    // 0061152006P
-    // 0061MME144M
     // ------------------------------------------
 
     const identifierMatch =
@@ -706,14 +775,23 @@ function parseItems(
     const itemNumber =
       identifierMatch[2]
 
-    /*
-      Reject obvious non-item strings.
-    */
-
     if (
       itemNumber.length < 3
     ) {
       continue
+    }
+
+    /*
+      We must know which bidder columns this
+      occurrence belongs to.
+    */
+
+    if (
+      currentBidderRanks.length === 0
+    ) {
+      throw new Error(
+        `Item ${lineNumber}/${itemNumber} was encountered before a bidder-group header could be identified.`
+      )
     }
 
     // ------------------------------------------
@@ -757,11 +835,6 @@ function parseItems(
         break
       }
 
-      /*
-        Stop when we've clearly reached
-        the metadata/ranking portion.
-      */
-
       if (
         candidate ===
           'Tabulation of Bids' ||
@@ -772,10 +845,27 @@ function parseItems(
         break
       }
 
-      block.push(candidate)
+      /*
+        If the next bidder table header begins,
+        this item block is finished.
+      */
+
+      if (
+        /^\(\d+\)\s+/.test(
+          candidate
+        )
+      ) {
+        break
+      }
+
+      block.push(
+        candidate
+      )
     }
 
-    if (block.length < 4) {
+    if (
+      block.length < 4
+    ) {
       continue
     }
 
@@ -784,36 +874,45 @@ function parseItems(
     // ------------------------------------------
 
     const quantityIndex =
-      block.findIndex(value =>
-        /^[\d,]+(?:\.\d+)?$/.test(
-          value
-        ) ||
-        /^\(\d+(?:\.\d+)?\)$/.test(
-          value
-        )
+      block.findIndex(
+        value =>
+          /^[\d,]+(?:\.\d+)?$/.test(
+            value
+          ) ||
+          /^\(\d+(?:\.\d+)?\)$/.test(
+            value
+          )
       )
 
-    if (quantityIndex <= 0) {
+    if (
+      quantityIndex <= 0
+    ) {
       continue
     }
 
     const quantityLine =
-      block[quantityIndex]
+      block[
+        quantityIndex
+      ]
 
     const quantity =
       /^\(\d+(?:\.\d+)?\)$/.test(
         quantityLine
       )
         ? Number(
-            quantityLine
-              .replace(/[()]/g, '')
+            quantityLine.replace(
+              /[()]/g,
+              ''
+            )
           )
         : numberToValue(
             quantityLine
           )
 
     if (
-      !Number.isFinite(quantity)
+      !Number.isFinite(
+        quantity
+      )
     ) {
       continue
     }
@@ -829,7 +928,10 @@ function parseItems(
           quantityIndex
         )
         .join(' ')
-        .replace(/\s+/g, ' ')
+        .replace(
+          /\s+/g,
+          ' '
+        )
         .trim()
 
     if (!description) {
@@ -850,7 +952,7 @@ function parseItems(
     }
 
     // ------------------------------------------
-    // FIND PRICE LINE
+    // PRICES FOR CURRENT BIDDER GROUP
     // ------------------------------------------
 
     let parsedPrices:
@@ -870,10 +972,6 @@ function parseItems(
       const candidate =
         block[k]
 
-      /*
-        Price rows contain decimals.
-      */
-
       if (
         !/\d+\.\d+/.test(
           candidate
@@ -886,16 +984,36 @@ function parseItems(
         const result =
           parseBidPriceString(
             candidate,
-            bidders.length,
+            currentBidderRanks.length,
             quantity
           )
 
         if (
           result.length ===
-          bidders.length
+          currentBidderRanks.length
         ) {
+          /*
+            parseBidPriceString numbers the
+            local columns 1..N.
+
+            Convert those local positions to
+            actual contract bidder ranks.
+          */
+
           parsedPrices =
-            result
+            result.map(
+              (
+                price,
+                index
+              ) => ({
+                ...price,
+
+                bidder_rank:
+                  currentBidderRanks[
+                    index
+                  ],
+              })
+            )
 
           break
         }
@@ -912,6 +1030,7 @@ function parseItems(
     if (!parsedPrices) {
       throw new Error(
         `Could not parse prices for ${itemNumber}. ` +
+        `Active bidder ranks: ${currentBidderRanks.join(',')}. ` +
         `Block: ${block.join(' | ')}. ` +
         `Last parser error: ${
           priceError?.message ||
@@ -920,44 +1039,152 @@ function parseItems(
       )
     }
 
-    items.push({
-      line_number:
-        lineNumber,
+    // ------------------------------------------
+    // CREATE OR MERGE ITEM
+    // ------------------------------------------
 
-      item_number:
-        itemNumber,
+    const itemKey =
+      `${lineNumber}::${itemNumber}`
 
-      description,
+    const existingItem =
+      itemMap.get(
+        itemKey
+      )
 
-      quantity,
+    if (!existingItem) {
+      itemMap.set(
+        itemKey,
+        {
+          line_number:
+            lineNumber,
 
-      unit:
-        unit.trim(),
+          item_number:
+            itemNumber,
 
-      section_number:
-        currentSectionNumber,
+          description,
 
-      section_description:
-        currentSectionDescription,
+          quantity,
 
-      engineer_estimate_unit_price:
-        null,
+          unit:
+            unit.trim(),
 
-      prices:
-        parsedPrices,
-    })
+          section_number:
+            currentSectionNumber,
 
-    /*
-      Jump to where this item's block ended.
-    */
+          section_description:
+            currentSectionDescription,
+
+          engineer_estimate_unit_price:
+            null,
+
+          prices:
+            parsedPrices,
+        }
+      )
+    } else {
+      /*
+        The repeated occurrence must describe
+        the same underlying pay item.
+      */
+
+      if (
+        Math.abs(
+          existingItem.quantity -
+          quantity
+        ) > 0.000001
+      ) {
+        throw new Error(
+          `Repeated item ${lineNumber}/${itemNumber} has inconsistent quantities: ${existingItem.quantity} vs ${quantity}.`
+        )
+      }
+
+      if (
+        existingItem.unit !==
+        unit.trim()
+      ) {
+        throw new Error(
+          `Repeated item ${lineNumber}/${itemNumber} has inconsistent units: ${existingItem.unit} vs ${unit.trim()}.`
+        )
+      }
+
+      for (
+        const price of
+          parsedPrices
+      ) {
+        const existingPrice =
+          existingItem.prices.find(
+            candidate =>
+              candidate.bidder_rank ===
+              price.bidder_rank
+          )
+
+        if (existingPrice) {
+          /*
+            Repeated page headers can cause the
+            same bidder/item combination to
+            appear again. It must match exactly.
+          */
+
+          const unitDifference =
+            Math.abs(
+              existingPrice.unit_price -
+              price.unit_price
+            )
+
+          const extensionDifference =
+            Math.abs(
+              existingPrice.extended_amount -
+              price.extended_amount
+            )
+
+          if (
+            unitDifference >
+              0.00001 ||
+            extensionDifference >
+              0.01
+          ) {
+            throw new Error(
+              `Conflicting repeated price for ${lineNumber}/${itemNumber}, bidder ${price.bidder_rank}.`
+            )
+          }
+
+          continue
+        }
+
+        existingItem.prices.push(
+          price
+        )
+      }
+    }
 
     i =
       j - 1
   }
 
-  if (items.length === 0) {
+  const items =
+    Array.from(
+      itemMap.values()
+    )
+
+  if (
+    items.length === 0
+  ) {
     throw new Error(
       'No NJDOT bid items were parsed.'
+    )
+  }
+
+  /*
+    Normalize price order before validation.
+  */
+
+  for (
+    const item of items
+  ) {
+    item.prices.sort(
+      (a, b) =>
+        a.bidder_rank -
+        b.bidder_rank
     )
   }
 
