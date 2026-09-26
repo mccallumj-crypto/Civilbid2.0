@@ -2138,41 +2138,6 @@ async function processOneDocument(
       lines
     )
 
- console.log(
-  '25139 151006M CONTEXT DIAGNOSTIC',
-  lines
-    .map(
-      (line, index) => ({
-        line,
-        index,
-      })
-    )
-    .filter(entry =>
-      entry.line.includes(
-        '151006M'
-      )
-    )
-    .map(entry => ({
-      itemIndex:
-        entry.index,
-
-      before:
-        lines.slice(
-          Math.max(
-            0,
-            entry.index - 15
-          ),
-          entry.index
-        ),
-
-      itemAndAfter:
-        lines.slice(
-          entry.index,
-          entry.index + 10
-        ),
-    }))
-)
-
   const items =
     parseItems(
       lines,
