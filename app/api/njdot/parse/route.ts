@@ -1333,17 +1333,47 @@ export async function GET(
       )
     }
 
-    const supabase =
-      createClient(
-        supabaseUrl,
-        serviceRoleKey,
-        {
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-          },
-        }
-      )
+ const supabase =
+  createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+
+      global: {
+        fetch: (
+          input,
+          init = {}
+        ) => {
+          return fetch(
+            input,
+            {
+              ...init,
+
+              cache: 'no-store',
+
+              headers: {
+                ...Object.fromEntries(
+                  new Headers(
+                    init.headers
+                  ).entries()
+                ),
+
+                'Cache-Control':
+                  'no-cache, no-store, max-age=0',
+
+                Pragma:
+                  'no-cache',
+              },
+            }
+          )
+        },
+      },
+    }
+  )
 
     // ==========================================
     // FIND NJDOT SOURCE
