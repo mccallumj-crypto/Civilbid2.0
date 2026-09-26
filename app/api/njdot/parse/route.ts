@@ -684,56 +684,82 @@ function parseItems(
     const line =
       lines[i]
 
-    // ------------------------------------------
-    // BIDDER HEADER
-    // ------------------------------------------
+// ------------------------------------------
+// BIDDER HEADER
+// ------------------------------------------
 
-    const bidderHeaderMatch =
-      line.match(
-        /^\((\d+)\)\s+/
+const bidderHeaderMatch =
+  line.match(
+    /^\((\d+)\)\s+/
+  )
+
+if (bidderHeaderMatch) {
+  const rank =
+    Number(
+      bidderHeaderMatch[1]
+    )
+
+  if (
+    bidders.some(
+      bidder =>
+        bidder.rank === rank
+    )
+  ) {
+    /*
+      NJDOT repeats bidder headers on each
+      table/page.
+
+      The important distinction is whether
+      this bidder header belongs to the same
+      immediately adjacent header sequence.
+
+      Examples:
+
+        (1) ...
+        (2) ...
+        (3) ...
+
+      = active group [1,2,3]
+
+      Later:
+
+        (4) ...
+
+      = new active group [4]
+
+      If the previous line was NOT another
+      bidder header, this begins a new group.
+    */
+
+    const previousLine =
+      i > 0
+        ? lines[i - 1]
+        : ''
+
+    const previousWasBidderHeader =
+      /^\(\d+\)\s+/.test(
+        previousLine
       )
 
-    if (bidderHeaderMatch) {
-      const rank =
-        Number(
-          bidderHeaderMatch[1]
-        )
-
-      if (
-        bidders.some(
-          bidder =>
-            bidder.rank === rank
-        )
-      ) {
-        /*
-          A lower/equal rank after we've already
-          collected ranks indicates a repeated
-          page header / new table header.
-        */
-
-        if (
-          currentBidderRanks.length > 0 &&
-          rank <=
-            currentBidderRanks[
-              currentBidderRanks.length - 1
-            ]
-        ) {
-          currentBidderRanks = []
-        }
-
-        if (
-          !currentBidderRanks.includes(
-            rank
-          )
-        ) {
-          currentBidderRanks.push(
-            rank
-          )
-        }
-      }
-
-      continue
+    if (
+      !previousWasBidderHeader
+    ) {
+      currentBidderRanks = []
     }
+
+    if (
+      !currentBidderRanks.includes(
+        rank
+      )
+    ) {
+      currentBidderRanks.push(
+        rank
+      )
+    }
+  }
+
+  continue
+}
 
     // ------------------------------------------
     // SECTION HEADER
