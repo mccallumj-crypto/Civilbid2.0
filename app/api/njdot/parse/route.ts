@@ -893,51 +893,191 @@ if (bidderHeaderMatch) {
 
     // ------------------------------------------
     // QUANTITY
+    //
+    // Do not assume the first numeric line is
+    // the quantity. NJDOT descriptions can
+    // contain standalone numbers, for example:
+    //
+    // COARSE AGGREGATE, SIZE NO.
+    // 57
+    // 125.000
+    // CY
+    //
+    // Here "57" belongs to the description and
+    // "125.000" is the actual quantity.
+    //
+    // Test each numeric-looking line as a
+    // possible quantity. Accept it only when:
+    //
+    //   1. a following unit line exists, and
+    //   2. a later line parses successfully as
+    //      prices for the active bidder group.
     // ------------------------------------------
 
-    const quantityIndex =
-      block.findIndex(
-        value =>
-          /^[\d,]+(?:\.\d+)?$/.test(
-            value
-          ) ||
-          /^\(\d+(?:\.\d+)?\)$/.test(
-            value
-          )
-      )
+    let quantityIndex =
+      -1
 
-    if (
-      quantityIndex <= 0
+    let quantity =
+      NaN
+
+    for (
+      let q = 1;
+      q < block.length - 2;
+      q++
     ) {
-      continue
+      const candidateQuantityLine =
+        block[q]
+
+      const isNumericQuantity =
+        /^[\d,]+(?:\.\d+)?$/.test(
+          candidateQuantityLine
+        ) ||
+        /^\(\d+(?:\.\d+)?\)$/.test(
+          candidateQuantityLine
+        )
+
+      if (!isNumericQuantity) {
+        continue
+      }
+
+      const candidateQuantity =
+        /^\(\d+(?:\.\d+)?\)$/.test(
+          candidateQuantityLine
+        )
+          ? Number(
+              candidateQuantityLine.replace(
+                /[()]/g,
+                ''
+              )
+            )
+          : numberToValue(
+              candidateQuantityLine
+            )
+
+      if (
+        !Number.isFinite(
+          candidateQuantity
+        )
+      ) {
+        continue
+      }
+
+      /*
+        The next line should be the unit.
+      */
+
+      const candidateUnit =
+        block[q + 1]
+
+      if (!candidateUnit) {
+        continue
+      }
+
+      /*
+        A unit should not itself look like
+        another plain numeric value.
+
+        This rejects cases like:
+
+          57
+          125.000
+          CY
+
+        from treating 57 as the quantity,
+        because 125.000 cannot be the unit.
+      */
+
+      if (
+        /^[\d,]+(?:\.\d+)?$/.test(
+          candidateUnit
+        ) ||
+        /^\(\d+(?:\.\d+)?\)$/.test(
+          candidateUnit
+        )
+      ) {
+        continue
+      }
+
+      /*
+        Now prove that this quantity actually
+        works with one of the following price
+        rows for the active bidder group.
+      */
+
+      let hasValidPriceRow =
+        false
+
+      for (
+        let p = q + 2;
+        p < block.length;
+        p++
+      ) {
+        const candidatePriceLine =
+          block[p]
+
+        if (
+          !/\d+\.\d+/.test(
+            candidatePriceLine
+          )
+        ) {
+          continue
+        }
+
+        try {
+          const testPrices =
+            parseBidPriceString(
+              candidatePriceLine,
+              currentBidderRanks.length,
+              candidateQuantity
+            )
+
+          if (
+            testPrices.length ===
+            currentBidderRanks.length
+          ) {
+            hasValidPriceRow =
+              true
+
+            break
+          }
+        } catch {
+          /*
+            This candidate quantity did not
+            produce a valid bidder-price row.
+            Try the next possible quantity.
+          */
+        }
+      }
+
+      if (
+        hasValidPriceRow
+      ) {
+        quantityIndex =
+          q
+
+        quantity =
+          candidateQuantity
+
+        break
+      }
     }
 
-    const quantityLine =
-      block[
-        quantityIndex
-      ]
-
-    const quantity =
-      /^\(\d+(?:\.\d+)?\)$/.test(
-        quantityLine
-      )
-        ? Number(
-            quantityLine.replace(
-              /[()]/g,
-              ''
-            )
-          )
-        : numberToValue(
-            quantityLine
-          )
-
     if (
+      quantityIndex <= 0 ||
       !Number.isFinite(
         quantity
       )
     ) {
-      continue
+      throw new Error(
+        `Could not identify a validated quantity for ${lineNumber}/${itemNumber}. ` +
+        `Active bidder ranks: ${currentBidderRanks.join(',')}. ` +
+        `Block: ${block.join(' | ')}`
+      )
     }
+
+    // ------------------------------------------
+    // DESCRIPTION
+    // ------------------------------------------
 
     // ------------------------------------------
     // DESCRIPTION
