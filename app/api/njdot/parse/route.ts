@@ -887,6 +887,77 @@ if (isBidderHeaderLine) {
     }
 
     // ------------------------------------------
+    // BIDDER RANKS FOR THIS ITEM OCCURRENCE
+    //
+    // NJDOT may repeat the same item for
+    // multiple bidder groups.
+    //
+    // Sometimes PDF extraction causes bidder
+    // headers to accumulate, for example:
+    //
+    //   currentBidderRanks = [1,2,3,4,5,6]
+    //
+    // even though this occurrence only contains
+    // prices for bidders 4,5,6.
+    //
+    // If this item has already been parsed,
+    // remove bidder ranks whose prices are
+    // already stored for the item.
+    // ------------------------------------------
+
+    const itemKey =
+      `${lineNumber}::${itemNumber}`
+
+    const existingItem =
+      itemMap.get(
+        itemKey
+      )
+
+    let itemBidderRanks =
+      [
+        ...currentBidderRanks,
+      ]
+
+    if (existingItem) {
+      const alreadyParsedRanks =
+        new Set(
+          existingItem.prices.map(
+            price =>
+              price.bidder_rank
+          )
+        )
+
+      const missingRanks =
+        currentBidderRanks.filter(
+          rank =>
+            !alreadyParsedRanks.has(
+              rank
+            )
+        )
+
+      /*
+        If there are genuinely new bidder ranks,
+        this occurrence belongs to those bidders.
+
+        If there are no missing ranks, keep the
+        current bidder group because this may
+        simply be a repeated page/header.
+      */
+
+      if (
+        missingRanks.length >
+        0
+      ) {
+        itemBidderRanks =
+          missingRanks
+      }
+    }
+
+    // ------------------------------------------
+    // QUANTITY
+    // ------------------------------------------
+    
+    // ------------------------------------------
     // QUANTITY
     //
     // Do not assume the first numeric line is
@@ -1020,15 +1091,15 @@ if (isBidderHeaderLine) {
 
         try {
           const testPrices =
-            parseBidPriceString(
-              candidatePriceLine,
-              currentBidderRanks.length,
-              candidateQuantity
-            )
+parseBidPriceString(
+  candidatePriceLine,
+  itemBidderRanks.length,
+  candidateQuantity
+)
 
           if (
             testPrices.length ===
-            currentBidderRanks.length
+            itemBidderRanks.length
           ) {
             hasValidPriceRow =
               true
@@ -1065,7 +1136,7 @@ if (isBidderHeaderLine) {
     ) {
       throw new Error(
         `Could not identify a validated quantity for ${lineNumber}/${itemNumber}. ` +
-        `Active bidder ranks: ${currentBidderRanks.join(',')}. ` +
+        `Active bidder ranks: ${itemBidderRanks.join(',')}. ` +
         `Block: ${block.join(' | ')}`
       )
     }
@@ -1141,13 +1212,13 @@ if (isBidderHeaderLine) {
         const result =
           parseBidPriceString(
             candidate,
-            currentBidderRanks.length,
+            itemBidderRanks.length,
             quantity
           )
 
         if (
           result.length ===
-          currentBidderRanks.length
+          itemBidderRanks.length
         ) {
           /*
             parseBidPriceString numbers the
@@ -1166,7 +1237,7 @@ if (isBidderHeaderLine) {
                 ...price,
 
                 bidder_rank:
-                  currentBidderRanks[
+                  itemBidderRanks[
                     index
                   ],
               })
@@ -1187,7 +1258,7 @@ if (isBidderHeaderLine) {
     if (!parsedPrices) {
       throw new Error(
         `Could not parse prices for ${itemNumber}. ` +
-        `Active bidder ranks: ${currentBidderRanks.join(',')}. ` +
+        `Active bidder ranks: ${itemBidderRanks.join(',')}. ` +
         `Block: ${block.join(' | ')}. ` +
         `Last parser error: ${
           priceError?.message ||
@@ -1199,14 +1270,6 @@ if (isBidderHeaderLine) {
     // ------------------------------------------
     // CREATE OR MERGE ITEM
     // ------------------------------------------
-
-    const itemKey =
-      `${lineNumber}::${itemNumber}`
-
-    const existingItem =
-      itemMap.get(
-        itemKey
-      )
 
     if (!existingItem) {
       itemMap.set(
