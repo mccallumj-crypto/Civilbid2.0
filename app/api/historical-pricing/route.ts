@@ -765,6 +765,26 @@ export async function GET(
     // OPTIONAL FILTERS
     // ========================================
 
+const contractFilter =
+  (
+    params.get(
+      'contract'
+    ) ??
+    ''
+  )
+    .trim()
+    .toUpperCase()
+
+    const contractFilter =
+  (
+    params.get(
+      'contract'
+    ) ??
+    ''
+  )
+    .trim()
+    .toUpperCase()
+    
     const countyFilter =
       (
         params.get(
@@ -1362,6 +1382,19 @@ export async function GET(
       rawResults
         .filter(
           row => {
+            if (
+  contractFilter &&
+  !String(
+    row.contract_number ??
+    ''
+  )
+    .toUpperCase()
+    .includes(
+      contractFilter
+    )
+) {
+  return false
+}}
             if (
               quantityMin !==
                 null &&
