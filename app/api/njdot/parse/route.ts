@@ -2075,24 +2075,39 @@ async function processOneDocument(
       lines
     )
 
-  console.log(
-  '25139 BIDDER GROUP DIAGNOSTIC',
+ console.log(
+  '25139 151006M CONTEXT DIAGNOSTIC',
   lines
     .map(
       (line, index) => ({
-        index,
         line,
+        index,
       })
     )
-    .filter(
-      entry =>
-        /^\(\d+\)/.test(
-          entry.line
-        ) ||
-        entry.line.includes(
-          '151006M'
-        )
+    .filter(entry =>
+      entry.line.includes(
+        '151006M'
+      )
     )
+    .map(entry => ({
+      itemIndex:
+        entry.index,
+
+      before:
+        lines.slice(
+          Math.max(
+            0,
+            entry.index - 15
+          ),
+          entry.index
+        ),
+
+      itemAndAfter:
+        lines.slice(
+          entry.index,
+          entry.index + 10
+        ),
+    }))
 )
 
   const items =
