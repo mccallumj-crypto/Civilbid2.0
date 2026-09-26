@@ -691,66 +691,61 @@ function parseItems(
 // BIDDER HEADER
 // ------------------------------------------
 
-const bidderHeaderMatch =
-  line.match(
-    /^\((\d+)\)\s+/
+const isBidderHeaderLine =
+  /^\(\d+\)\s+/.test(
+    line
   )
 
-if (bidderHeaderMatch) {
-  const rank =
-    Number(
-      bidderHeaderMatch[1]
+if (isBidderHeaderLine) {
+  const bidderHeaderRanks =
+    Array.from(
+      line.matchAll(
+        /\((\d+)\)/g
+      )
     )
+      .map(match =>
+        Number(
+          match[1]
+        )
+      )
+      .filter(rank =>
+        bidders.some(
+          bidder =>
+            bidder.rank === rank
+        )
+      )
 
   if (
-    bidders.some(
-      bidder =>
-        bidder.rank === rank
-    )
+    bidderHeaderRanks.length >
+    0
   ) {
-    /*
-      Once we've started reading items for a
-      bidder group, the next bidder header
-      begins another bidder group.
-
-      Before any items have been encountered,
-      collect all bidder ranks appearing in
-      that table header.
-
-      Example:
-        (1) ...
-        (2) ...
-        (3) ...
-
-      produces:
-        [1, 2, 3]
-
-      Later, after those items:
-        (4) ...
-
-      starts:
-        [4]
-    */
-
     if (groupHasItems) {
-      currentBidderRanks = []
-      groupHasItems = false
+      currentBidderRanks =
+        []
+
+      groupHasItems =
+        false
     }
 
-    if (
-      !currentBidderRanks.includes(
-        rank
-      )
+    for (
+      const rank of
+      bidderHeaderRanks
     ) {
-      currentBidderRanks.push(
-        rank
-      )
-
-      currentBidderRanks.sort(
-        (a, b) =>
-          a - b
-      )
+      if (
+        !currentBidderRanks.includes(
+          rank
+        )
+      ) {
+        currentBidderRanks.push(
+          rank
+        )
+      }
     }
+
+    currentBidderRanks.sort(
+      (a, b) =>
+        a - b
+    )
   }
 
   continue
