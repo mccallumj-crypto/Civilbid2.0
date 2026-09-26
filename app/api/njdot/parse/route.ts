@@ -1315,6 +1315,248 @@ async function importValidatedContract(
   }
 }
 
+async function processOneDocument(
+  supabase: any,
+  source: any,
+  document: any
+) {
+  // ==========================================
+  // STORAGE PATH
+  // ==========================================
+
+  const safeContract =
+    String(
+      document.contract_number ||
+      document.id
+    )
+      .replace(
+        /[^a-zA-Z0-9_-]/g,
+        '_'
+      )
+      .slice(0, 100)
+
+  const storagePath =
+    `2026/${safeContract}/${document.id}.pdf`
+
+  // ==========================================
+  // GET PDF
+  // ==========================================
+
+  let pdfBuffer: Buffer
+
+  let sourceUsed =
+    'Supabase Storage'
+
+  const {
+    data: storedFile,
+    error: storageError,
+  } =
+    await supabase.storage
+      .from(
+        'njdot-source-documents'
+      )
+      .download(
+        storagePath
+      )
+
+  if (
+    !storageError &&
+    storedFile
+  ) {
+    pdfBuffer =
+      Buffer.from(
+        await storedFile.arrayBuffer()
+      )
+  } else {
+    sourceUsed =
+      'NJDOT source URL'
+
+    const response =
+      await fetch(
+        document.source_url,
+        {
+          headers: {
+            'User-Agent':
+              'CivilBid/1.0 NJDOT public-data parser',
+
+            Accept:
+              'application/pdf,*/*',
+          },
+
+          cache:
+            'no-store',
+        }
+      )
+
+    if (!response.ok) {
+      throw new Error(
+        `NJDOT returned HTTP ${response.status}`
+      )
+    }
+
+    pdfBuffer =
+      Buffer.from(
+        await response.arrayBuffer()
+      )
+  }
+
+  // ==========================================
+  // VERIFY PDF
+  // ==========================================
+
+  const signature =
+    pdfBuffer
+      .subarray(0, 5)
+      .toString('ascii')
+
+  if (
+    signature !== '%PDF-'
+  ) {
+    throw new Error(
+      `Invalid PDF signature: ${signature}`
+    )
+  }
+
+  // ==========================================
+  // EXTRACT TEXT
+  // ==========================================
+
+  const pdfResult =
+    await pdf(pdfBuffer)
+
+  const normalizedText =
+    normalizeText(
+      String(
+        pdfResult.text || ''
+      )
+    )
+
+  if (
+    !normalizedText
+  ) {
+    throw new Error(
+      'PDF contains no extractable text.'
+    )
+  }
+
+  const lines =
+    normalizedText
+      .split('\n')
+      .map(line =>
+        line.trim()
+      )
+      .filter(Boolean)
+
+  // ==========================================
+  // PARSE STRUCTURE
+  // ==========================================
+
+  const metadata =
+    parseContractMetadata(
+      normalizedText
+    )
+
+  const counties =
+    parseCounties(
+      normalizedText
+    )
+
+  const bidders =
+    parseBidders(
+      lines
+    )
+
+  const items =
+    parseItems(
+      lines,
+      bidders
+    )
+
+  const parsed:
+    ParsedContract = {
+      ...metadata,
+      counties,
+      bidders,
+      items,
+    }
+
+  // ==========================================
+  // VERIFY CONTRACT NUMBER
+  // ==========================================
+
+  if (
+    document.contract_number &&
+    parsed.contract_number !==
+      document.contract_number
+  ) {
+    throw new Error(
+      `Contract number mismatch. Expected ${document.contract_number}, parsed ${parsed.contract_number}.`
+    )
+  }
+
+  // ==========================================
+  // VALIDATE
+  // ==========================================
+
+  const validation =
+    validateParsedContract(
+      parsed
+    )
+
+  if (!validation.valid) {
+    throw new Error(
+      `Contract validation failed: ${validation.errors.join(' | ')}`
+    )
+  }
+
+  // ==========================================
+  // IMPORT
+  // ==========================================
+
+  const importResult =
+    await importValidatedContract(
+      supabase,
+      source,
+      document,
+      parsed,
+      validation
+    )
+
+  return {
+    import:
+      importResult,
+
+    document: {
+      id:
+        document.id,
+
+      expected_contract_number:
+        document.contract_number,
+
+      source_used:
+        sourceUsed,
+
+      storage_path:
+        storagePath,
+    },
+
+    parsed,
+
+    validation,
+
+    pdf: {
+      pages:
+        pdfResult.numpages,
+
+      bytes:
+        pdfBuffer.length,
+
+      extracted_characters:
+        normalizedText.length,
+    },
+  }
+}
+
 export async function GET(
   request: NextRequest
 ) {
