@@ -1933,24 +1933,51 @@ export async function GET(
         const failedAt =
           new Date().toISOString()
 
-        const {
-          error: failureUpdateError,
-        } = await supabase
-          .from(
-            'external_source_documents'
-          )
-          .update({
-            processing_status:
-              'error',
+       const {
+  data: failedDocument,
+  error: failureUpdateError,
+} = await supabase
+  .from(
+    'external_source_documents'
+  )
+  .update({
+    processing_status:
+      'error',
 
-            error_message:
-              errorMessage,
+    error_message:
+      errorMessage,
 
-            updated_at:
-              failedAt,
-          })
-          .eq(
-            'id',
+    updated_at:
+      failedAt,
+  })
+  .eq(
+    'id',
+    document.id
+  )
+  .select(`
+    id,
+    contract_number,
+    processing_status,
+    error_message,
+    updated_at
+  `)
+  .single()
+
+if (failureUpdateError) {
+  throw new Error(
+    `Contract ${document.contract_number} failed parsing, AND its failure status could not be saved: ${failureUpdateError.message}. Original parser error: ${errorMessage}`
+  )
+}
+
+if (
+  !failedDocument ||
+  failedDocument.processing_status !==
+    'error'
+) {
+  throw new Error(
+    `Contract ${document.contract_number} failed parsing, but the database did not confirm error status. Original parser error: ${errorMessage}`
+  )
+}
             document.id
           )
 
@@ -1961,19 +1988,22 @@ export async function GET(
           )
         }
 
-        results.push({
-          contract_number:
-            document.contract_number,
+results.push({
+  contract_number:
+    document.contract_number,
 
-          document_id:
-            document.id,
+  document_id:
+    document.id,
 
-          status:
-            'failed',
+  status:
+    'failed',
 
-          error:
-            errorMessage,
-        })
+  error:
+    errorMessage,
+
+  database_status:
+    failedDocument.processing_status,
+})
 
         // Initial batch processor deliberately
         // stops on the first failure.
