@@ -2080,13 +2080,10 @@ async function processOneDocument(
       lines
     )
 
-  console.log(
+console.log(
   'BIDDER HEADER DIAGNOSTIC',
   lines.filter(line =>
-    line.includes('COLONNELLI') ||
-    line.includes('IEW CONSTRUCTION') ||
-    line.includes('SANZARI') ||
-    line.includes('DIACO CONTRACTING')
+    /^\(\d+\)\s+/.test(line)
   )
 )
 
