@@ -306,6 +306,15 @@ export default function HistoricalPricingPage() {
         query.trim()
       )
 
+    if (
+  contractNumber.trim()
+) {
+  params.set(
+    'contract',
+    contractNumber.trim()
+  )
+}  
+
       if (
         quantity.trim()
       ) {
@@ -417,6 +426,7 @@ export default function HistoricalPricingPage() {
   function clearFilters() {
     setQuantity('')
     setCounty('')
+    setContractNumber('')
     setDistrict('')
     setBidder('')
     setFromDate('')
