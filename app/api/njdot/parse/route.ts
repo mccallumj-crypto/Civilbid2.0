@@ -1250,9 +1250,12 @@ async function importValidatedContract(
     )
   }
 
-  // ==========================================
+   // ==========================================
   // MARK SOURCE DOCUMENT PROCESSED
   // ==========================================
+
+  const processedAt =
+    new Date().toISOString()
 
   const {
     error: processedError,
@@ -1261,32 +1264,17 @@ async function importValidatedContract(
       'external_source_documents'
     )
     .update({
-     const processedAt =
-  new Date().toISOString()
+      processing_status:
+        'processed',
 
-const {
-  error: processedError,
-} = await supabase
-  .from(
-    'external_source_documents'
-  )
-  .update({
-    processing_status:
-      'processed',
+      processed_at:
+        processedAt,
 
-    processed_at:
-      processedAt,
+      error_message:
+        null,
 
-    error_message:
-      null,
-
-    updated_at:
-      processedAt,
-  })
-  .eq(
-    'id',
-    document.id
-  )
+      updated_at:
+        processedAt,
     })
     .eq(
       'id',
