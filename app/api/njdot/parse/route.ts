@@ -1942,7 +1942,7 @@ export async function GET(
           )
           .update({
             processing_status:
-              'error',
+              'failed',
 
             error_message:
               errorMessage,
@@ -1972,10 +1972,10 @@ export async function GET(
         if (
           !failedDocument ||
           failedDocument.processing_status !==
-            'error'
+            'failed'
         ) {
           throw new Error(
-            `Contract ${document.contract_number} failed parsing, but the database did not confirm error status. Original parser error: ${errorMessage}`
+            `Contract ${document.contract_number} failed parsing, but the database did not confirm failed status. Original parser error: ${errorMessage}`
           )
         }
 
