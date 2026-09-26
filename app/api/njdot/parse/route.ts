@@ -1680,24 +1680,16 @@ export async function GET(
     
     // ==========================================
          // ==========================================
-    // SELECT ONE PENDING DOCUMENT
-    //
-    // The filtered Supabase query has occasionally
-    // returned a stale "pending" representation for
-    // a document that is actually processed.
-    //
-    // To protect against duplicate imports:
-    // 1. Get several pending candidates.
-    // 2. Re-read each candidate by exact ID.
-    // 3. Use the first one whose current status
-    //    is truly "pending".
+    // SELECT VERIFIED PENDING DOCUMENTS
     // ==========================================
 
     const {
       data: pendingCandidates,
       error: candidateError,
     } = await supabase
-      .from('external_source_documents')
+      .from(
+        'external_source_documents'
+      )
       .select(`
         id,
         contract_number,
@@ -1732,19 +1724,15 @@ export async function GET(
       )
     }
 
-    let document:
-      | {
-          id: string
-          contract_number: string | null
-          title: string | null
-          source_url: string
-          processing_status: string
-          created_at: string
-        }
-      | null = null
+    // ==========================================
+    // VERIFY CANDIDATES BY EXACT ID
+    // ==========================================
 
-    const candidateDiagnostics: any[] =
-      []
+    const verifiedDocuments:
+      any[] = []
+
+    const candidateDiagnostics:
+      any[] = []
 
     for (
       const candidate of
@@ -1795,19 +1783,34 @@ export async function GET(
         currentDocument.processing_status ===
         'pending'
       ) {
-        document =
+        verifiedDocuments.push(
           currentDocument
+        )
+      }
 
+      if (
+        verifiedDocuments.length >=
+        batchSize
+      ) {
         break
       }
     }
 
-    if (!document) {
+    // ==========================================
+    // NOTHING LEFT TO PROCESS
+    // ==========================================
+
+    if (
+      verifiedDocuments.length === 0
+    ) {
       return NextResponse.json({
         success: true,
 
         mode:
           'no_verified_pending_document',
+
+        batch_size:
+          batchSize,
 
         candidates_checked:
           candidateDiagnostics,
@@ -1830,262 +1833,199 @@ export async function GET(
         success: true,
 
         mode:
-          'verified_pending_selection',
+          'verified_pending_batch_selection',
 
         supabase_project_ref:
           supabaseProjectRef,
 
-        selected_document: {
-          id:
-            document.id,
+        batch_size:
+          batchSize,
 
-          contract_number:
-            document.contract_number,
+        verified_documents:
+          verifiedDocuments.map(
+            document => ({
+              id:
+                document.id,
 
-          processing_status:
-            document.processing_status,
+              contract_number:
+                document.contract_number,
 
-          created_at:
-            document.created_at,
-        },
+              processing_status:
+                document.processing_status,
+
+              created_at:
+                document.created_at,
+            })
+          ),
 
         candidates_checked:
           candidateDiagnostics,
 
         message:
-          'Diagnostic only. Candidate documents were verified by exact ID. No document was parsed, imported, or updated.',
+          'Diagnostic only. Verified pending documents were selected. No documents were parsed, imported, or updated.',
       })
     }
-    // ==========================================
-    // STORAGE PATH
-    // ==========================================
-
-    const safeContract =
-      String(
-        document.contract_number ||
-        document.id
-      )
-        .replace(
-          /[^a-zA-Z0-9_-]/g,
-          '_'
-        )
-        .slice(0, 100)
-
-    const storagePath =
-      `2026/${safeContract}/${document.id}.pdf`
 
     // ==========================================
-    // GET PDF
+    // PROCESS VERIFIED DOCUMENTS
     // ==========================================
 
-    let pdfBuffer: Buffer
+    const results:
+      any[] = []
 
-    let sourceUsed =
-      'Supabase Storage'
-
-    const {
-      data: storedFile,
-      error: storageError,
-    } =
-      await supabase.storage
-        .from(
-          'njdot-source-documents'
-        )
-        .download(
-          storagePath
-        )
-
-    if (
-      !storageError &&
-      storedFile
+    for (
+      const document of
+        verifiedDocuments
     ) {
-      pdfBuffer =
-        Buffer.from(
-          await storedFile.arrayBuffer()
-        )
-    } else {
-      sourceUsed =
-        'NJDOT source URL'
-
-      const response =
-        await fetch(
-          document.source_url,
-          {
-            headers: {
-              'User-Agent':
-                'CivilBid/1.0 NJDOT public-data parser',
-
-              Accept:
-                'application/pdf,*/*',
-            },
-
-            cache:
-              'no-store',
-          }
+      try {
+        console.info(
+          'Processing NJDOT contract:',
+          document.contract_number
         )
 
-      if (!response.ok) {
-        throw new Error(
-          `NJDOT returned HTTP ${response.status}`
+        const result =
+          await processOneDocument(
+            supabase,
+            source,
+            document
+          )
+
+        results.push({
+          contract_number:
+            document.contract_number,
+
+          document_id:
+            document.id,
+
+          status:
+            'processed',
+
+          import:
+            result.import,
+
+          validation:
+            result.validation,
+
+          pdf:
+            result.pdf,
+
+          source_used:
+            result.document.source_used,
+
+          storage_path:
+            result.document.storage_path,
+        })
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : String(error)
+
+        console.error(
+          `NJDOT contract ${document.contract_number} failed:`,
+          error
         )
+
+        // ======================================
+        // RECORD FAILURE ON SOURCE DOCUMENT
+        // ======================================
+
+        const failedAt =
+          new Date().toISOString()
+
+        const {
+          error: failureUpdateError,
+        } = await supabase
+          .from(
+            'external_source_documents'
+          )
+          .update({
+            processing_status:
+              'error',
+
+            error_message:
+              errorMessage,
+
+            updated_at:
+              failedAt,
+          })
+          .eq(
+            'id',
+            document.id
+          )
+
+        if (failureUpdateError) {
+          console.error(
+            'Could not record document failure:',
+            failureUpdateError
+          )
+        }
+
+        results.push({
+          contract_number:
+            document.contract_number,
+
+          document_id:
+            document.id,
+
+          status:
+            'failed',
+
+          error:
+            errorMessage,
+        })
+
+        // Initial batch processor deliberately
+        // stops on the first failure.
+        break
       }
-
-      pdfBuffer =
-        Buffer.from(
-          await response.arrayBuffer()
-        )
     }
 
     // ==========================================
-    // VERIFY PDF
+    // BATCH SUMMARY
     // ==========================================
 
-    const signature =
-      pdfBuffer
-        .subarray(0, 5)
-        .toString('ascii')
+    const processedCount =
+      results.filter(
+        result =>
+          result.status ===
+          'processed'
+      ).length
 
-    if (
-      signature !== '%PDF-'
-    ) {
-      throw new Error(
-        `Invalid PDF signature: ${signature}`
-      )
-    }
-
-    // ==========================================
-    // EXTRACT TEXT
-    // ==========================================
-
-    const pdfResult =
-      await pdf(pdfBuffer)
-
-    const normalizedText =
-      normalizeText(
-        String(
-          pdfResult.text || ''
-        )
-      )
-
-    if (
-      !normalizedText
-    ) {
-      throw new Error(
-        'PDF contains no extractable text.'
-      )
-    }
-
-    const lines =
-      normalizedText
-        .split('\n')
-        .map(line =>
-          line.trim()
-        )
-        .filter(Boolean)
-
-    // ==========================================
-    // PARSE STRUCTURE
-    // ==========================================
-
-    const metadata =
-      parseContractMetadata(
-        normalizedText
-      )
-
-    const counties =
-      parseCounties(
-        normalizedText
-      )
-
-    const bidders =
-      parseBidders(
-        lines
-      )
-
-    const items =
-      parseItems(
-        lines,
-        bidders
-      )
-
-    const parsed:
-      ParsedContract = {
-        ...metadata,
-        counties,
-        bidders,
-        items,
-      }
-
-    // ==========================================
-    // VALIDATE
-    // ==========================================
-
-    const validation =
-      validateParsedContract(
-        parsed
-      )
-
-    const importResult =
-  await importValidatedContract(
-    supabase,
-    source,
-    document,
-    parsed,
-    validation
-  )
-
-    // ==========================================
-    // RETURN ONLY — NO DB WRITES
-    // ==========================================
+    const failedCount =
+      results.filter(
+        result =>
+          result.status ===
+          'failed'
+      ).length
 
     return NextResponse.json({
-  success: true,
-  mode: 'validated_import_test',
-  import: importResult,
+      success:
+        failedCount === 0,
 
-diagnostics: {
-  supabase_project_ref:
-    supabaseProjectRef,
+      mode:
+        'controlled_batch_import',
 
-  selected_document: {
-    id: document.id,
-    contract_number: document.contract_number,
-    processing_status: document.processing_status,
-  },
-},
+      supabase_project_ref:
+        supabaseProjectRef,
 
-      document: {
-        id:
-          document.id,
+      requested_batch_size:
+        batchSize,
 
-        expected_contract_number:
-          document.contract_number,
+      processed:
+        processedCount,
 
-        source_used:
-          sourceUsed,
+      failed:
+        failedCount,
 
-        storage_path:
-          storagePath,
-      },
+      results,
 
-      parsed,
-
-      validation,
-
-      pdf: {
-        pages:
-          pdfResult.numpages,
-
-        bytes:
-          pdfBuffer.length,
-
-        extracted_characters:
-          normalizedText.length,
-      },
-
-     message:
-  'NJDOT contract parsed, validated, and imported successfully.'
+      message:
+        failedCount === 0
+          ? `Successfully processed ${processedCount} NJDOT contract(s).`
+          : `Processed ${processedCount} NJDOT contract(s) before encountering a failure.`,
     })
+    
   } catch (error) {
     console.error(
       'NJDOT structured parser failed:',
