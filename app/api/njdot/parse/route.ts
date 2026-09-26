@@ -1394,57 +1394,141 @@ if (diagnosticError) {
 }
     
     // ==========================================
-        // ==========================================
+         // ==========================================
     // SELECT ONE PENDING DOCUMENT
+    //
+    // The filtered Supabase query has occasionally
+    // returned a stale "pending" representation for
+    // a document that is actually processed.
+    //
+    // To protect against duplicate imports:
+    // 1. Get several pending candidates.
+    // 2. Re-read each candidate by exact ID.
+    // 3. Use the first one whose current status
+    //    is truly "pending".
     // ==========================================
 
-const {
-  data: documents,
-  error: documentError,
-} = await supabase
-  .from('external_source_documents')
-  .select(`
-    id,
-    contract_number,
-    title,
-    source_url,
-    processing_status,
-    created_at
-  `)
-  .eq(
-    'data_source_id',
-    source.id
-  )
-  .eq(
-    'document_type',
-    'bid_tabulation'
-  )
-  .eq(
-    'processing_status',
-    'pending'
-  )
-  .order(
-    'created_at',
-    {
-      ascending: true,
-    }
-  )
-  .limit(1)
+    const {
+      data: pendingCandidates,
+      error: candidateError,
+    } = await supabase
+      .from('external_source_documents')
+      .select(`
+        id,
+        contract_number,
+        title,
+        source_url,
+        processing_status,
+        created_at
+      `)
+      .eq(
+        'data_source_id',
+        source.id
+      )
+      .eq(
+        'document_type',
+        'bid_tabulation'
+      )
+      .eq(
+        'processing_status',
+        'pending'
+      )
+      .order(
+        'created_at',
+        {
+          ascending: true,
+        }
+      )
+      .limit(25)
 
-    if (documentError) {
+    if (candidateError) {
       throw new Error(
-        `Could not select NJDOT document: ${documentError.message}`
+        `Could not select NJDOT document candidates: ${candidateError.message}`
       )
     }
 
-    const document =
-      documents?.[0] ?? null
+    let document:
+      | {
+          id: string
+          contract_number: string | null
+          title: string | null
+          source_url: string
+          processing_status: string
+          created_at: string
+        }
+      | null = null
+
+    const candidateDiagnostics: any[] =
+      []
+
+    for (
+      const candidate of
+        pendingCandidates ?? []
+    ) {
+      const {
+        data: currentDocument,
+        error: currentDocumentError,
+      } = await supabase
+        .from(
+          'external_source_documents'
+        )
+        .select(`
+          id,
+          contract_number,
+          title,
+          source_url,
+          processing_status,
+          created_at
+        `)
+        .eq(
+          'id',
+          candidate.id
+        )
+        .single()
+
+      if (currentDocumentError) {
+        throw new Error(
+          `Could not verify NJDOT document ${candidate.id}: ${currentDocumentError.message}`
+        )
+      }
+
+      candidateDiagnostics.push({
+        id:
+          candidate.id,
+
+        contract_number:
+          candidate.contract_number,
+
+        filtered_query_status:
+          candidate.processing_status,
+
+        exact_read_status:
+          currentDocument.processing_status,
+      })
+
+      if (
+        currentDocument.processing_status ===
+        'pending'
+      ) {
+        document =
+          currentDocument
+
+        break
+      }
+    }
 
     if (!document) {
       return NextResponse.json({
         success: true,
+
+        mode:
+          'no_verified_pending_document',
+
+        candidates_checked:
+          candidateDiagnostics,
+
         message:
-          'No pending NJDOT bid tabulations were found.',
+          'No verified pending NJDOT bid tabulations were found.',
       })
     }
 
@@ -1457,45 +1541,16 @@ const {
         'diagnostic'
       ) === '1'
     ) {
-      const {
-        data: exact26408,
-        error: exact26408Error,
-      } = await supabase
-        .from(
-          'external_source_documents'
-        )
-        .select(`
-          id,
-          contract_number,
-          processing_status,
-          created_at,
-          updated_at
-        `)
-        .eq(
-          'id',
-          '84156b89-9e75-45a2-9528-cf67d6736267'
-        )
-        .single()
-
       return NextResponse.json({
         success: true,
 
         mode:
-          'selection_diagnostic_two_reads',
+          'verified_pending_selection',
 
         supabase_project_ref:
           supabaseProjectRef,
 
-        exact_26408_read: {
-          data:
-            exact26408,
-
-          error:
-            exact26408Error?.message ??
-            null,
-        },
-
-        pending_query_result: {
+        selected_document: {
           id:
             document.id,
 
@@ -1509,11 +1564,13 @@ const {
             document.created_at,
         },
 
+        candidates_checked:
+          candidateDiagnostics,
+
         message:
-          'Diagnostic only. Two database reads performed. No document was parsed, imported, or updated.',
+          'Diagnostic only. Candidate documents were verified by exact ID. No document was parsed, imported, or updated.',
       })
     }
-
     // ==========================================
     // STORAGE PATH
     // ==========================================
