@@ -2075,6 +2075,26 @@ async function processOneDocument(
       lines
     )
 
+  console.log(
+  '25139 BIDDER GROUP DIAGNOSTIC',
+  lines
+    .map(
+      (line, index) => ({
+        index,
+        line,
+      })
+    )
+    .filter(
+      entry =>
+        /^\(\d+\)/.test(
+          entry.line
+        ) ||
+        entry.line.includes(
+          '151006M'
+        )
+    )
+)
+
   const items =
     parseItems(
       lines,
