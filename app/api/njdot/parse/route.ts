@@ -1073,47 +1073,50 @@ if (isBidderHeaderLine) {
       let hasValidPriceRow =
         false
 
-      for (
-        let p = q + 2;
-        p < block.length;
-        p++
-      ) {
-        const candidatePriceLine =
-          block[p]
+let combinedPriceText =
+  ''
 
-        if (
-          !/\d+\.\d+/.test(
-            candidatePriceLine
-          )
-        ) {
-          continue
-        }
+for (
+  let p = q + 2;
+  p < block.length;
+  p++
+) {
+  combinedPriceText +=
+    block[p]
 
-        try {
-          const testPrices =
-parseBidPriceString(
-  candidatePriceLine,
-  itemBidderRanks.length,
-  candidateQuantity
-)
+  if (
+    !/\d+\.\d+/.test(
+      combinedPriceText
+    )
+  ) {
+    continue
+  }
 
-          if (
-            testPrices.length ===
-            itemBidderRanks.length
-          ) {
-            hasValidPriceRow =
-              true
+  try {
+    const testPrices =
+      parseBidPriceString(
+        combinedPriceText,
+        itemBidderRanks.length,
+        candidateQuantity
+      )
 
-            break
-          }
-        } catch {
-          /*
-            This candidate quantity did not
-            produce a valid bidder-price row.
-            Try the next possible quantity.
-          */
-        }
-      }
+    if (
+      testPrices.length ===
+      itemBidderRanks.length
+    ) {
+      hasValidPriceRow =
+        true
+
+      break
+    }
+  } catch {
+    /*
+      The complete NJDOT price text may
+      span several extracted PDF lines.
+      Keep appending lines and try again.
+    */
+  }
+}
 
       if (
         hasValidPriceRow
@@ -1191,69 +1194,78 @@ parseBidPriceString(
       | Error
       | null = null
 
-    for (
-      let k =
-        quantityIndex + 2;
-      k < block.length;
-      k++
+    let combinedPriceText =
+  ''
+
+for (
+  let k =
+    quantityIndex + 2;
+  k < block.length;
+  k++
+) {
+  combinedPriceText +=
+    block[k]
+
+  if (
+    !/\d+\.\d+/.test(
+      combinedPriceText
+    )
+  ) {
+    continue
+  }
+
+  try {
+    const result =
+      parseBidPriceString(
+        combinedPriceText,
+        itemBidderRanks.length,
+        quantity
+      )
+
+    if (
+      result.length ===
+      itemBidderRanks.length
     ) {
-      const candidate =
-        block[k]
+      /*
+        parseBidPriceString numbers the
+        local columns 1..N.
 
-      if (
-        !/\d+\.\d+/.test(
-          candidate
+        Convert those local positions to
+        actual contract bidder ranks.
+      */
+
+      parsedPrices =
+        result.map(
+          (
+            price,
+            index
+          ) => ({
+            ...price,
+
+            bidder_rank:
+              itemBidderRanks[
+                index
+              ],
+          })
         )
-      ) {
-        continue
-      }
 
-      try {
-        const result =
-          parseBidPriceString(
-            candidate,
-            itemBidderRanks.length,
-            quantity
+      break
+    }
+  } catch (error) {
+    priceError =
+      error instanceof Error
+        ? error
+        : new Error(
+            String(error)
           )
 
-        if (
-          result.length ===
-          itemBidderRanks.length
-        ) {
-          /*
-            parseBidPriceString numbers the
-            local columns 1..N.
-
-            Convert those local positions to
-            actual contract bidder ranks.
-          */
-
-          parsedPrices =
-            result.map(
-              (
-                price,
-                index
-              ) => ({
-                ...price,
-
-                bidder_rank:
-                  itemBidderRanks[
-                    index
-                  ],
-              })
-            )
-
-          break
-        }
-      } catch (error) {
-        priceError =
-          error instanceof Error
-            ? error
-            : new Error(
-                String(error)
-              )
-      }
-    }
+    /*
+      PDF extraction can split a price
+      value across multiple lines.
+      Keep appending and retry.
+    */
+  }
+}
 
     if (!parsedPrices) {
       throw new Error(
