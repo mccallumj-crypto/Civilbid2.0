@@ -175,6 +175,12 @@ function formatDate(
     return '—'
   }
 
+const [
+  contractNumber,
+  setContractNumber,
+] =
+  useState('')
+  
   const date =
     new Date(
       `${value}T00:00:00`
