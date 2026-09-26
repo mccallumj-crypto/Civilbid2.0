@@ -1420,9 +1420,12 @@ if (diagnosticError) {
         'bid_tabulation'
       )
       .eq(
-        'processing_status',
-        'pending'
-      )
+  'processing_status',
+  'pending'
+)
+.order(
+  'created_at',
+  
       .neq(
         'id',
         'bd82e45d-3a19-4380-a290-5b8f5dc48f41'
