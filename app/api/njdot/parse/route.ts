@@ -1398,45 +1398,38 @@ if (diagnosticError) {
     // SELECT ONE PENDING DOCUMENT
     // ==========================================
 
-    const {
-      data: documents,
-      error: documentError,
-    } = await supabase
-      .from('external_source_documents')
-      .select(`
-        id,
-        contract_number,
-        title,
-        source_url,
-        processing_status,
-        created_at
-      `)
-      .eq(
-        'data_source_id',
-        source.id
-      )
-      .eq(
-        'document_type',
-        'bid_tabulation'
-      )
-      .eq(
-  'processing_status',
-  'pending'
-)
-.order(
-  'created_at',
-  
-      .neq(
-        'id',
-        'bd82e45d-3a19-4380-a290-5b8f5dc48f41'
-      )
-      .order(
-        'created_at',
-        {
-          ascending: true,
-        }
-      )
-      .limit(1)
+const {
+  data: documents,
+  error: documentError,
+} = await supabase
+  .from('external_source_documents')
+  .select(`
+    id,
+    contract_number,
+    title,
+    source_url,
+    processing_status,
+    created_at
+  `)
+  .eq(
+    'data_source_id',
+    source.id
+  )
+  .eq(
+    'document_type',
+    'bid_tabulation'
+  )
+  .eq(
+    'processing_status',
+    'pending'
+  )
+  .order(
+    'created_at',
+    {
+      ascending: true,
+    }
+  )
+  .limit(1))
 
     if (documentError) {
       throw new Error(
