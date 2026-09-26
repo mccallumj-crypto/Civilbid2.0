@@ -1915,7 +1915,7 @@ export async function GET(
           storage_path:
             result.document.storage_path,
         })
-      } catch (error) {
+          } catch (error) {
         const errorMessage =
           error instanceof Error
             ? error.message
@@ -1926,10 +1926,6 @@ export async function GET(
           error
         )
 
-
-      }
-    }
-    
         // ======================================
         // RECORD FAILURE ON SOURCE DOCUMENT
         // ======================================
@@ -2000,11 +1996,10 @@ export async function GET(
             failedDocument.processing_status,
         })
 
-        // Initial batch processor deliberately
-        // stops on the first failure.
+        // Stop this batch on the first failure.
         break
-  }
-}
+      }
+    }
 
     // ==========================================
     // BATCH SUMMARY
@@ -2050,7 +2045,7 @@ export async function GET(
           ? `Successfully processed ${processedCount} NJDOT contract(s).`
           : `Processed ${processedCount} NJDOT contract(s) before encountering a failure.`,
     })
-    
+
   } catch (error) {
     console.error(
       'NJDOT structured parser failed:',
