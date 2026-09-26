@@ -313,25 +313,14 @@ function parseBidPriceString(
     value.replace(/\s+/g, '')
 
   /*
-    NJDOT bidder-price rows are concatenated as:
+    PRIMARY PARSER
 
-    UNIT PRICE + EXTENDED AMOUNT
+    Standard NJDOT format:
+      unit price = 5 decimal places
+      extension  = 2 decimal places
 
-    Unit price:
-      5 decimal places
-
-    Extended amount:
-      2 decimal places
-
-    Examples:
-
-    20,000.0000020,000.00
-    60,000.0000060,000.00
-
-    100.00000100.00
-    12,000.0000012,000.00
-
-    0.843301,149,954.54
+    We preserve this parser exactly for the
+    document formats that already work.
   */
 
   const pairRegex =
@@ -343,44 +332,278 @@ function parseBidPriceString(
     )
 
   if (
-    matches.length !==
+    matches.length ===
     bidderCount
   ) {
-    throw new Error(
-      `Expected ${bidderCount} bidder price pairs but found ${matches.length}: ${value}`
-    )
-  }
-
-  const prices: ItemPrice[] =
-    matches.map(
-      (match, index) => {
-        const unitPrice =
-          moneyToNumber(
-            match[1]
-          )
-
-        const extendedAmount =
-          moneyToNumber(
-            match[2]
-          )
-
-        return {
+    const prices: ItemPrice[] =
+      matches.map(
+        (match, index) => ({
           bidder_rank:
             index + 1,
+
+          unit_price:
+            moneyToNumber(
+              match[1]
+            ),
+
+          extended_amount:
+            moneyToNumber(
+              match[2]
+            ),
+        })
+      )
+
+    for (
+      const price of prices
+    ) {
+      const expected =
+        quantity *
+        price.unit_price
+
+      const difference =
+        Math.abs(
+          expected -
+          price.extended_amount
+        )
+
+      if (
+        difference > 1.00
+      ) {
+        throw new Error(
+          `Price arithmetic failed for bidder ${price.bidder_rank}. ` +
+          `Quantity ${quantity} × unit price ${price.unit_price} = ${expected.toFixed(2)}, ` +
+          `but NJDOT extension is ${price.extended_amount.toFixed(2)}.`
+        )
+      }
+    }
+
+    return prices
+  }
+
+  /*
+    FALLBACK PARSER
+
+    Some NJDOT PDFs collapse adjacent bidder
+    columns differently.
+
+    Instead of weakening the primary regex,
+    try possible unit-price / extension splits
+    and accept only splits that satisfy:
+
+      quantity × unit price ≈ extension
+
+    The entire string must be consumed and
+    exactly bidderCount pairs must be found.
+  */
+
+  type Candidate = {
+    start: number
+    end: number
+    unit_price: number
+    extended_amount: number
+  }
+
+  const candidates:
+    Candidate[] = []
+
+  for (
+    let start = 0;
+    start < compact.length;
+    start++
+  ) {
+    if (
+      !/[0-9]/.test(
+        compact[start]
+      )
+    ) {
+      continue
+    }
+
+    for (
+      let split =
+        start + 1;
+      split <
+        compact.length;
+      split++
+    ) {
+      const unitText =
+        compact.slice(
+          start,
+          split
+        )
+
+      /*
+        Fallback permits 2 through 5 decimal
+        places for the unit price.
+      */
+
+      if (
+        !/^(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2,5}$/.test(
+          unitText
+        )
+      ) {
+        continue
+      }
+
+      const remainder =
+        compact.slice(
+          split
+        )
+
+      const extensionMatch =
+        remainder.match(
+          /^(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}/
+        )
+
+      if (
+        !extensionMatch
+      ) {
+        continue
+      }
+
+      const extensionText =
+        extensionMatch[0]
+
+      const unitPrice =
+        moneyToNumber(
+          unitText
+        )
+
+      const extendedAmount =
+        moneyToNumber(
+          extensionText
+        )
+
+      const expected =
+        quantity *
+        unitPrice
+
+      const difference =
+        Math.abs(
+          expected -
+          extendedAmount
+        )
+
+      if (
+        difference <= 1.00
+      ) {
+        candidates.push({
+          start,
+
+          end:
+            split +
+            extensionText.length,
 
           unit_price:
             unitPrice,
 
           extended_amount:
             extendedAmount,
-        }
+        })
       }
+    }
+  }
+
+  /*
+    Find a complete interpretation beginning
+    at character 0 and ending at the final
+    character of the compressed price string.
+  */
+
+  const solutions:
+    Candidate[][] = []
+
+  function search(
+    position: number,
+    selected: Candidate[]
+  ) {
+    if (
+      selected.length >
+      bidderCount
+    ) {
+      return
+    }
+
+    if (
+      position ===
+        compact.length
+    ) {
+      if (
+        selected.length ===
+        bidderCount
+      ) {
+        solutions.push([
+          ...selected,
+        ])
+      }
+
+      return
+    }
+
+    const options =
+      candidates.filter(
+        candidate =>
+          candidate.start ===
+          position
+      )
+
+    for (
+      const option of options
+    ) {
+      search(
+        option.end,
+        [
+          ...selected,
+          option,
+        ]
+      )
+
+      /*
+        More than one complete solution means
+        the row is ambiguous. Do not import it.
+      */
+
+      if (
+        solutions.length > 1
+      ) {
+        return
+      }
+    }
+  }
+
+  search(
+    0,
+    []
+  )
+
+  if (
+    solutions.length !== 1
+  ) {
+    throw new Error(
+      `Expected ${bidderCount} bidder price pairs. ` +
+      `Primary parser found ${matches.length}; ` +
+      `fallback found ${solutions.length} complete interpretations: ${value}`
+    )
+  }
+
+  const prices =
+    solutions[0].map(
+      (candidate, index) => ({
+        bidder_rank:
+          index + 1,
+
+        unit_price:
+          candidate.unit_price,
+
+        extended_amount:
+          candidate.extended_amount,
+      })
     )
 
   /*
-    Arithmetic validation here gives us
-    another safeguard against a regex
-    accidentally splitting the row wrong.
+    Final arithmetic check even though the
+    fallback already used arithmetic to find
+    the boundaries.
   */
 
   for (
@@ -396,9 +619,11 @@ function parseBidPriceString(
         price.extended_amount
       )
 
-    if (difference > 1.00) {
+    if (
+      difference > 1.00
+    ) {
       throw new Error(
-        `Price arithmetic failed for bidder ${price.bidder_rank}. ` +
+        `Fallback price arithmetic failed for bidder ${price.bidder_rank}. ` +
         `Quantity ${quantity} × unit price ${price.unit_price} = ${expected.toFixed(2)}, ` +
         `but NJDOT extension is ${price.extended_amount.toFixed(2)}.`
       )
