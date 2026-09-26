@@ -676,6 +676,9 @@ function parseItems(
   let currentBidderRanks:
     number[] = []
 
+  let groupHasItems =
+  false
+  
   for (
     let i = 0;
     i < lines.length;
@@ -706,45 +709,32 @@ if (bidderHeaderMatch) {
     )
   ) {
     /*
-      NJDOT repeats bidder headers on each
-      table/page.
+      Once we've started reading items for a
+      bidder group, the next bidder header
+      begins another bidder group.
 
-      The important distinction is whether
-      this bidder header belongs to the same
-      immediately adjacent header sequence.
+      Before any items have been encountered,
+      collect all bidder ranks appearing in
+      that table header.
 
-      Examples:
-
+      Example:
         (1) ...
         (2) ...
         (3) ...
 
-      = active group [1,2,3]
+      produces:
+        [1, 2, 3]
 
-      Later:
-
+      Later, after those items:
         (4) ...
 
-      = new active group [4]
-
-      If the previous line was NOT another
-      bidder header, this begins a new group.
+      starts:
+        [4]
     */
 
-    const previousLine =
-      i > 0
-        ? lines[i - 1]
-        : ''
-
-    const previousWasBidderHeader =
-      /^\(\d+\)\s+/.test(
-        previousLine
-      )
-
-    if (
-      !previousWasBidderHeader
-    ) {
+    if (groupHasItems) {
       currentBidderRanks = []
+      groupHasItems = false
     }
 
     if (
@@ -755,12 +745,16 @@ if (bidderHeaderMatch) {
       currentBidderRanks.push(
         rank
       )
+
+      currentBidderRanks.sort(
+        (a, b) =>
+          a - b
+      )
     }
   }
 
   continue
 }
-
     // ------------------------------------------
     // SECTION HEADER
     // ------------------------------------------
@@ -819,6 +813,8 @@ if (bidderHeaderMatch) {
         `Item ${lineNumber}/${itemNumber} was encountered before a bidder-group header could be identified.`
       )
     }
+
+    groupHasItems = true
 
     // ------------------------------------------
     // BUILD ITEM BLOCK
