@@ -1318,6 +1318,28 @@ async function importValidatedContract(
 export async function GET(
   request: NextRequest
 ) {
+    const requestedBatchSize =
+    Number(
+      request.nextUrl.searchParams.get(
+        'batch'
+      ) ?? '1'
+    )
+
+  const batchSize =
+    Number.isFinite(
+      requestedBatchSize
+    )
+      ? Math.min(
+          Math.max(
+            Math.floor(
+              requestedBatchSize
+            ),
+            1
+          ),
+          5
+        )
+      : 1
+  
   try {
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL
