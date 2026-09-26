@@ -2075,28 +2075,6 @@ async function processOneDocument(
       lines
     )
 
-console.log(
-  'BIDDER HEADER DIAGNOSTIC',
-  {
-    parsedBidders:
-      bidders.map(
-        bidder => ({
-          rank: bidder.rank,
-          name: bidder.name,
-        })
-      ),
-
-    uniqueHeaderCandidates:
-      Array.from(
-        new Set(
-          lines.filter(line =>
-            /^\(\d+\)/.test(line)
-          )
-        )
-      ),
-  }
-)
-
   const items =
     parseItems(
       lines,
