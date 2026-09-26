@@ -1429,7 +1429,7 @@ const {
       ascending: true,
     }
   )
-  .limit(1))
+  .limit(1)
 
     if (documentError) {
       throw new Error(
