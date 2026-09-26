@@ -1413,24 +1413,6 @@ export async function GET(
         }`
       )
     }
-
-    const {
-  data: diagnosticRow,
-  error: diagnosticError,
-} = await supabase
-  .from('external_source_documents')
-  .select('id,contract_number,document_type,processing_status,updated_at')
-  .eq(
-    'id',
-    'bd82e45d-3a19-4380-a290-5b8f5dc48f41'
-  )
-  .single()
-
-if (diagnosticError) {
-  throw new Error(
-    `Diagnostic lookup failed: ${diagnosticError.message}`
-  )
-}
     
     // ==========================================
          // ==========================================
@@ -1800,8 +1782,7 @@ if (diagnosticError) {
 diagnostics: {
   supabase_project_ref:
     supabaseProjectRef,
-  database_row:
-    diagnosticRow,
+
   selected_document: {
     id: document.id,
     contract_number: document.contract_number,
