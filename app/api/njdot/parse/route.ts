@@ -1926,6 +1926,10 @@ export async function GET(
           error
         )
 
+
+      }
+    }
+    
         // ======================================
         // RECORD FAILURE ON SOURCE DOCUMENT
         // ======================================
@@ -1933,83 +1937,74 @@ export async function GET(
         const failedAt =
           new Date().toISOString()
 
-       const {
-  data: failedDocument,
-  error: failureUpdateError,
-} = await supabase
-  .from(
-    'external_source_documents'
-  )
-  .update({
-    processing_status:
-      'error',
+        const {
+          data: failedDocument,
+          error: failureUpdateError,
+        } = await supabase
+          .from(
+            'external_source_documents'
+          )
+          .update({
+            processing_status:
+              'error',
 
-    error_message:
-      errorMessage,
+            error_message:
+              errorMessage,
 
-    updated_at:
-      failedAt,
-  })
-  .eq(
-    'id',
-    document.id
-  )
-  .select(`
-    id,
-    contract_number,
-    processing_status,
-    error_message,
-    updated_at
-  `)
-  .single()
-
-if (failureUpdateError) {
-  throw new Error(
-    `Contract ${document.contract_number} failed parsing, AND its failure status could not be saved: ${failureUpdateError.message}. Original parser error: ${errorMessage}`
-  )
-}
-
-if (
-  !failedDocument ||
-  failedDocument.processing_status !==
-    'error'
-) {
-  throw new Error(
-    `Contract ${document.contract_number} failed parsing, but the database did not confirm error status. Original parser error: ${errorMessage}`
-  )
-}
+            updated_at:
+              failedAt,
+          })
+          .eq(
+            'id',
             document.id
           )
+          .select(`
+            id,
+            contract_number,
+            processing_status,
+            error_message,
+            updated_at
+          `)
+          .single()
 
         if (failureUpdateError) {
-          console.error(
-            'Could not record document failure:',
-            failureUpdateError
+          throw new Error(
+            `Contract ${document.contract_number} failed parsing, AND its failure status could not be saved: ${failureUpdateError.message}. Original parser error: ${errorMessage}`
           )
         }
 
-results.push({
-  contract_number:
-    document.contract_number,
+        if (
+          !failedDocument ||
+          failedDocument.processing_status !==
+            'error'
+        ) {
+          throw new Error(
+            `Contract ${document.contract_number} failed parsing, but the database did not confirm error status. Original parser error: ${errorMessage}`
+          )
+        }
 
-  document_id:
-    document.id,
+        results.push({
+          contract_number:
+            document.contract_number,
 
-  status:
-    'failed',
+          document_id:
+            document.id,
 
-  error:
-    errorMessage,
+          status:
+            'failed',
 
-  database_status:
-    failedDocument.processing_status,
-})
+          error:
+            errorMessage,
+
+          database_status:
+            failedDocument.processing_status,
+        })
 
         // Initial batch processor deliberately
         // stops on the first failure.
         break
-      }
-    }
+  }
+}
 
     // ==========================================
     // BATCH SUMMARY
