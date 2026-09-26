@@ -2082,9 +2082,24 @@ async function processOneDocument(
 
 console.log(
   'BIDDER HEADER DIAGNOSTIC',
-  lines.filter(line =>
-    /^\(\d+\)\s+/.test(line)
-  )
+  {
+    parsedBidders:
+      bidders.map(
+        bidder => ({
+          rank: bidder.rank,
+          name: bidder.name,
+        })
+      ),
+
+    uniqueHeaderCandidates:
+      Array.from(
+        new Set(
+          lines.filter(line =>
+            /^\(\d+\)/.test(line)
+          )
+        )
+      ),
+  }
 )
 
   const items =
