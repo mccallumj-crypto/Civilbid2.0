@@ -670,6 +670,40 @@ export default function HistoricalPricingPage() {
                   style={
                     labelStyle
                   }
+                  >
+  <label>
+    <div
+      style={
+        labelStyle
+      }
+    >
+      Contract
+    </div>
+
+    <input
+      value={
+        contractNumber
+      }
+      onChange={
+        event =>
+          setContractNumber(
+            event
+              .target
+              .value
+          )
+      }
+      placeholder="25139"
+      style={
+        inputStyle
+      }
+    />
+  </label>
+
+  <label>
+    <div
+      style={
+        labelStyle
+      }
                 >
                   County
                 </div>
