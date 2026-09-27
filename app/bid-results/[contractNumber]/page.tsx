@@ -182,6 +182,43 @@ type Tab =
   | 'schedule'
   | 'analysis'
 
+type SortDirection =
+  | 'asc'
+  | 'desc'
+
+type OverviewSortKey =
+  | 'bidder_rank'
+  | 'bidder_name'
+  | 'total_bid'
+  | 'percent_of_low_bid'
+  | 'difference_from_low_bid'
+  | 'difference_from_low_bid_percent'
+
+type ScheduleSortKey =
+  | 'line_number'
+  | 'item_number'
+  | 'description'
+  | 'quantity'
+  | 'unit'
+  | `bidder:${string}`
+
+type AnalysisSortKey =
+  | 'bidder_rank'
+  | 'bidder_name'
+  | 'item_price_rank'
+  | 'unit_price'
+  | 'extended_amount'
+  | 'percent_vs_item_median'
+  | 'difference_vs_winning_item'
+  | 'overall_bid_disadvantage'
+  | 'bid_disadvantage_impact_percent'
+  | 'percent_of_total_bid'
+
+type SortState<T extends string> = {
+  key: T
+  direction: SortDirection
+}
+
 function money(
   value:
     | number
@@ -278,6 +315,75 @@ function formatDate(
   )
 }
 
+function compareSortableValues(
+  a:
+    | string
+    | number
+    | null
+    | undefined,
+  b:
+    | string
+    | number
+    | null
+    | undefined,
+  direction:
+    SortDirection
+) {
+  const aMissing =
+    a === null ||
+    a === undefined
+
+  const bMissing =
+    b === null ||
+    b === undefined
+
+  if (
+    aMissing &&
+    bMissing
+  ) {
+    return 0
+  }
+
+  if (aMissing) {
+    return 1
+  }
+
+  if (bMissing) {
+    return -1
+  }
+
+  let result = 0
+
+  if (
+    typeof a ===
+      'number' &&
+    typeof b ===
+      'number'
+  ) {
+    result =
+      a - b
+  } else {
+    result =
+      String(a)
+        .localeCompare(
+          String(b),
+          undefined,
+          {
+            numeric:
+              true,
+
+            sensitivity:
+              'base',
+          }
+        )
+  }
+
+  return direction ===
+    'asc'
+    ? result
+    : -result
+}
+
 export default function BidContractPage() {
   const params =
     useParams()
@@ -338,6 +444,49 @@ export default function BidContractPage() {
     setItemSearch,
   ] =
     useState('')
+
+
+  const [
+    overviewSort,
+    setOverviewSort,
+  ] =
+    useState<
+      SortState<OverviewSortKey>
+    >({
+      key:
+        'bidder_rank',
+
+      direction:
+        'asc',
+    })
+
+  const [
+    scheduleSort,
+    setScheduleSort,
+  ] =
+    useState<
+      SortState<ScheduleSortKey>
+    >({
+      key:
+        'line_number',
+
+      direction:
+        'asc',
+    })
+
+  const [
+    analysisSort,
+    setAnalysisSort,
+  ] =
+    useState<
+      SortState<AnalysisSortKey>
+    >({
+      key:
+        'bidder_rank',
+
+      direction:
+        'asc',
+    })
 
   // ========================================
   // LOAD CONTRACT
@@ -486,6 +635,235 @@ export default function BidContractPage() {
         itemSearch,
       ]
     )
+
+
+  const sortedOverviewBidders =
+    useMemo(
+      () => {
+        const bidders =
+          data?.bidders ??
+          []
+
+        return [
+          ...bidders,
+        ].sort(
+          (
+            a,
+            b
+          ) => {
+            return compareSortableValues(
+              a[
+                overviewSort.key
+              ],
+              b[
+                overviewSort.key
+              ],
+              overviewSort.direction
+            )
+          }
+        )
+      },
+      [
+        data,
+        overviewSort,
+      ]
+    )
+
+  const sortedScheduleItems =
+    useMemo(
+      () => {
+        return [
+          ...filteredItems,
+        ].sort(
+          (
+            a,
+            b
+          ) => {
+            let aValue:
+              | string
+              | number
+              | null
+              | undefined
+
+            let bValue:
+              | string
+              | number
+              | null
+              | undefined
+
+            if (
+              scheduleSort.key
+                .startsWith(
+                  'bidder:'
+                )
+            ) {
+              const bidderId =
+                scheduleSort.key
+                  .slice(
+                    'bidder:'
+                      .length
+                  )
+
+              aValue =
+                a.prices.find(
+                  price =>
+                    price.bidder_id ===
+                    bidderId
+                )
+                  ?.unit_price
+
+              bValue =
+                b.prices.find(
+                  price =>
+                    price.bidder_id ===
+                    bidderId
+                )
+                  ?.unit_price
+            } else {
+              switch (
+                scheduleSort.key
+              ) {
+                case 'line_number':
+                  aValue =
+                    a.line_number
+                  bValue =
+                    b.line_number
+                  break
+
+                case 'item_number':
+                  aValue =
+                    a.item_number
+                  bValue =
+                    b.item_number
+                  break
+
+                case 'description':
+                  aValue =
+                    a.description
+                  bValue =
+                    b.description
+                  break
+
+                case 'quantity':
+                  aValue =
+                    a.quantity
+                  bValue =
+                    b.quantity
+                  break
+
+                case 'unit':
+                  aValue =
+                    a.unit
+                  bValue =
+                    b.unit
+                  break
+              }
+            }
+
+            return compareSortableValues(
+              aValue,
+              bValue,
+              scheduleSort.direction
+            )
+          }
+        )
+      },
+      [
+        filteredItems,
+        scheduleSort,
+      ]
+    )
+
+  const sortedAnalysisBidders =
+    useMemo(
+      () => {
+        const bidderAnalysis =
+          data
+            ?.selected_item_analysis
+            ?.bidder_analysis ??
+          []
+
+        return [
+          ...bidderAnalysis,
+        ].sort(
+          (
+            a,
+            b
+          ) => {
+            return compareSortableValues(
+              a[
+                analysisSort.key
+              ],
+              b[
+                analysisSort.key
+              ],
+              analysisSort.direction
+            )
+          }
+        )
+      },
+      [
+        data,
+        analysisSort,
+      ]
+    )
+
+  function toggleOverviewSort(
+    key:
+      OverviewSortKey
+  ) {
+    setOverviewSort(
+      current => ({
+        key,
+
+        direction:
+          current.key ===
+            key &&
+          current.direction ===
+            'asc'
+            ? 'desc'
+            : 'asc',
+      })
+    )
+  }
+
+  function toggleScheduleSort(
+    key:
+      ScheduleSortKey
+  ) {
+    setScheduleSort(
+      current => ({
+        key,
+
+        direction:
+          current.key ===
+            key &&
+          current.direction ===
+            'asc'
+            ? 'desc'
+            : 'asc',
+      })
+    )
+  }
+
+  function toggleAnalysisSort(
+    key:
+      AnalysisSortKey
+  ) {
+    setAnalysisSort(
+      current => ({
+        key,
+
+        direction:
+          current.key ===
+            key &&
+          current.direction ===
+            'asc'
+            ? 'desc'
+            : 'asc',
+      })
+    )
+  }
 
   function openItem(
     itemNumber:
@@ -981,34 +1359,123 @@ export default function BidContractPage() {
                 <thead>
                   <tr>
                     <TH>
-                      Rank
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'bidder_rank'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'bidder_rank'
+                          )
+                        }
+                      >
+                        Rank
+                      </SortLabel>
                     </TH>
 
                     <TH>
-                      Bidder
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'bidder_name'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'bidder_name'
+                          )
+                        }
+                      >
+                        Bidder
+                      </SortLabel>
                     </TH>
 
                     <TH>
-                      Total Bid
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'total_bid'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'total_bid'
+                          )
+                        }
+                      >
+                        Total Bid
+                      </SortLabel>
                     </TH>
 
                     <TH>
-                      % of Low
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'percent_of_low_bid'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'percent_of_low_bid'
+                          )
+                        }
+                      >
+                        % of Low
+                      </SortLabel>
                     </TH>
 
                     <TH>
-                      Difference
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'difference_from_low_bid'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'difference_from_low_bid'
+                          )
+                        }
+                      >
+                        Difference
+                      </SortLabel>
                     </TH>
 
                     <TH>
-                      Difference %
+                      <SortLabel
+                        active={
+                          overviewSort.key ===
+                          'difference_from_low_bid_percent'
+                        }
+                        direction={
+                          overviewSort.direction
+                        }
+                        onClick={() =>
+                          toggleOverviewSort(
+                            'difference_from_low_bid_percent'
+                          )
+                        }
+                      >
+                        Difference %
+                      </SortLabel>
                     </TH>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {data
-                    .bidders
+                  {sortedOverviewBidders
                     .map(
                       bidder => (
                         <tr
@@ -1226,35 +1693,115 @@ export default function BidContractPage() {
                         left={0}
                         width={65}
                       >
-                        Line
+                        <SortLabel
+                          compact
+                          active={
+                            scheduleSort.key ===
+                            'line_number'
+                          }
+                          direction={
+                            scheduleSort.direction
+                          }
+                          onClick={() =>
+                            toggleScheduleSort(
+                              'line_number'
+                            )
+                          }
+                        >
+                          Line
+                        </SortLabel>
                       </StickyTH>
 
                       <StickyTH
                         left={65}
                         width={115}
                       >
-                        Item
+                        <SortLabel
+                          compact
+                          active={
+                            scheduleSort.key ===
+                            'item_number'
+                          }
+                          direction={
+                            scheduleSort.direction
+                          }
+                          onClick={() =>
+                            toggleScheduleSort(
+                              'item_number'
+                            )
+                          }
+                        >
+                          Item
+                        </SortLabel>
                       </StickyTH>
 
                       <StickyTH
                         left={180}
                         width={300}
                       >
-                        Description
+                        <SortLabel
+                          compact
+                          active={
+                            scheduleSort.key ===
+                            'description'
+                          }
+                          direction={
+                            scheduleSort.direction
+                          }
+                          onClick={() =>
+                            toggleScheduleSort(
+                              'description'
+                            )
+                          }
+                        >
+                          Description
+                        </SortLabel>
                       </StickyTH>
 
                       <StickyTH
                         left={480}
                         width={85}
                       >
-                        Qty
+                        <SortLabel
+                          compact
+                          active={
+                            scheduleSort.key ===
+                            'quantity'
+                          }
+                          direction={
+                            scheduleSort.direction
+                          }
+                          onClick={() =>
+                            toggleScheduleSort(
+                              'quantity'
+                            )
+                          }
+                        >
+                          Qty
+                        </SortLabel>
                       </StickyTH>
 
                       <StickyTH
                         left={565}
                         width={70}
                       >
-                        Unit
+                        <SortLabel
+                          compact
+                          active={
+                            scheduleSort.key ===
+                            'unit'
+                          }
+                          direction={
+                            scheduleSort.direction
+                          }
+                          onClick={() =>
+                            toggleScheduleSort(
+                              'unit'
+                            )
+                          }
+                        >
+                          Unit
+                        </SortLabel>
                       </StickyTH>
 
                       {data
@@ -1278,29 +1825,32 @@ export default function BidContractPage() {
                                     : '#f9fafb',
                               }}
                             >
-                              <div>
-                                #
-                                {
-                                  bidder.bidder_rank
+                              <SortLabel
+                                compact
+                                active={
+                                  scheduleSort.key ===
+                                  `bidder:${bidder.id}`
                                 }
-                              </div>
-
-                              <div
-                                style={{
-                                  marginTop:
-                                    '3px',
-
-                                  fontWeight:
-                                    700,
-
-                                  whiteSpace:
-                                    'normal',
-                                }}
+                                direction={
+                                  scheduleSort.direction
+                                }
+                                onClick={() =>
+                                  toggleScheduleSort(
+                                    `bidder:${bidder.id}`
+                                  )
+                                }
                               >
-                                {
-                                  bidder.bidder_name
-                                }
-                              </div>
+                                <span>
+                                  #
+                                  {
+                                    bidder.bidder_rank
+                                  }
+                                  {' '}
+                                  {
+                                    bidder.bidder_name
+                                  }
+                                </span>
+                              </SortLabel>
                             </th>
                           )
                         )}
@@ -1308,7 +1858,7 @@ export default function BidContractPage() {
                   </thead>
 
                   <tbody>
-                    {filteredItems.map(
+                    {sortedScheduleItems.map(
                       item => {
                         const priceMap =
                           new Map(
@@ -1956,50 +2506,199 @@ export default function BidContractPage() {
                       <thead>
                         <tr>
                           <TH>
-                            Overall Rank
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'bidder_rank'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'bidder_rank'
+                                )
+                              }
+                            >
+                              Overall Rank
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Bidder
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'bidder_name'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'bidder_name'
+                                )
+                              }
+                            >
+                              Bidder
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Item Rank
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'item_price_rank'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'item_price_rank'
+                                )
+                              }
+                            >
+                              Item Rank
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Unit Price
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'unit_price'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'unit_price'
+                                )
+                              }
+                            >
+                              Unit Price
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Extension
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'extended_amount'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'extended_amount'
+                                )
+                              }
+                            >
+                              Extension
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            vs. Median
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'percent_vs_item_median'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'percent_vs_item_median'
+                                )
+                              }
+                            >
+                              vs. Median
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            vs. Winner Item
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'difference_vs_winning_item'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'difference_vs_winning_item'
+                                )
+                              }
+                            >
+                              vs. Winner Item
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Overall Bid Gap
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'overall_bid_disadvantage'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'overall_bid_disadvantage'
+                                )
+                              }
+                            >
+                              Overall Bid Gap
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            Item Impact
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'bid_disadvantage_impact_percent'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'bid_disadvantage_impact_percent'
+                                )
+                              }
+                            >
+                              Item Impact
+                            </SortLabel>
                           </TH>
 
                           <TH>
-                            % of Total Bid
+                            <SortLabel
+                              active={
+                                analysisSort.key ===
+                                'percent_of_total_bid'
+                              }
+                              direction={
+                                analysisSort.direction
+                              }
+                              onClick={() =>
+                                toggleAnalysisSort(
+                                  'percent_of_total_bid'
+                                )
+                              }
+                            >
+                              % of Total Bid
+                            </SortLabel>
                           </TH>
                         </tr>
                       </thead>
 
                       <tbody>
-                        {analysis
-                          .bidder_analysis
+                        {sortedAnalysisBidders
                           .map(
                             price => (
                               <tr
@@ -2112,6 +2811,124 @@ export default function BidContractPage() {
 // ==========================================
 // COMPONENTS
 // ==========================================
+
+function SortLabel({
+  children,
+  active,
+  direction,
+  onClick,
+  compact = false,
+}: {
+  children:
+    React.ReactNode
+
+  active:
+    boolean
+
+  direction:
+    SortDirection
+
+  onClick:
+    () => void
+
+  compact?:
+    boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        event => {
+          event
+            .stopPropagation()
+
+          onClick()
+        }
+      }
+      style={{
+        display:
+          'inline-flex',
+
+        alignItems:
+          compact
+            ? 'flex-start'
+            : 'center',
+
+        justifyContent:
+          'flex-start',
+
+        gap:
+          '5px',
+
+        width:
+          '100%',
+
+        border:
+          0,
+
+        padding:
+          0,
+
+        margin:
+          0,
+
+        background:
+          'transparent',
+
+        color:
+          'inherit',
+
+        font:
+          'inherit',
+
+        fontWeight:
+          700,
+
+        textAlign:
+          'left',
+
+        whiteSpace:
+          compact
+            ? 'normal'
+            : 'nowrap',
+
+        cursor:
+          'pointer',
+      }}
+    >
+      <span>
+        {children}
+      </span>
+
+      <span
+        style={{
+          fontSize:
+            '9px',
+
+          opacity:
+            active
+              ? 1
+              : 0.35,
+
+          flexShrink:
+            0,
+
+          marginTop:
+            compact
+              ? '1px'
+              : 0,
+        }}
+      >
+        {active
+          ? direction ===
+            'asc'
+            ? '▲'
+            : '▼'
+          : '↕'}
+      </span>
+    </button>
+  )
+}
 
 function ImpactCell({
   price,
