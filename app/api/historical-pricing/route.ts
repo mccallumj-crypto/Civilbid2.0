@@ -1394,7 +1394,7 @@ const contractFilter =
     )
 ) {
   return false
-}}
+}
             if (
               quantityMin !==
                 null &&
