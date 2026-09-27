@@ -765,16 +765,6 @@ export async function GET(
     // OPTIONAL FILTERS
     // ========================================
 
-const contractFilter =
-  (
-    params.get(
-      'contract'
-    ) ??
-    ''
-  )
-    .trim()
-    .toUpperCase()
-
     const contractFilter =
   (
     params.get(
