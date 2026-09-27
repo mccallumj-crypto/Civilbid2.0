@@ -1,9 +1,20 @@
 'use client'
 
 import {
-  FormEvent,
+  useMemo,
   useState,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
 } from 'react'
+
+import {
+  useRouter,
+} from 'next/navigation'
+
+// ==========================================
+// TYPES
+// ==========================================
 
 type PriceStats = {
   minimum: number | null
@@ -108,6 +119,32 @@ type ApiResponse = {
   message?: string
 }
 
+type SortDirection =
+  | 'asc'
+  | 'desc'
+
+type HistorySortKey =
+  | 'letting_date'
+  | 'contract_number'
+  | 'project_name'
+  | 'county'
+  | 'quantity'
+  | 'unit'
+  | 'bidder_name'
+  | 'bidder_rank'
+  | 'unit_price'
+  | 'extended_amount'
+  | 'bidder_total'
+
+type SortState = {
+  key: HistorySortKey
+  direction: SortDirection
+}
+
+// ==========================================
+// FORMATTERS
+// ==========================================
+
 function money(
   value:
     | number
@@ -175,12 +212,6 @@ function formatDate(
     return '—'
   }
 
-const [
-  contractNumber,
-  setContractNumber,
-] =
-  useState('')
-  
   const date =
     new Date(
       `${value}T00:00:00`
@@ -202,7 +233,88 @@ const [
     )
 }
 
+// ==========================================
+// SORTING
+// ==========================================
+
+function compareSortableValues(
+  a:
+    | string
+    | number
+    | null
+    | undefined,
+  b:
+    | string
+    | number
+    | null
+    | undefined,
+  direction:
+    SortDirection
+) {
+  const aMissing =
+    a === null ||
+    a === undefined
+
+  const bMissing =
+    b === null ||
+    b === undefined
+
+  if (
+    aMissing &&
+    bMissing
+  ) {
+    return 0
+  }
+
+  if (aMissing) {
+    return 1
+  }
+
+  if (bMissing) {
+    return -1
+  }
+
+  let result =
+    0
+
+  if (
+    typeof a ===
+      'number' &&
+    typeof b ===
+      'number'
+  ) {
+    result =
+      a - b
+  } else {
+    result =
+      String(a)
+        .localeCompare(
+          String(b),
+          undefined,
+          {
+            numeric:
+              true,
+
+            sensitivity:
+              'base',
+          }
+        )
+  }
+
+  return direction ===
+    'asc'
+    ? result
+    : -result
+}
+
+// ==========================================
+// PAGE
+// ==========================================
+
 export default function HistoricalPricingPage() {
+  const router =
+    useRouter()
+
   const [
     query,
     setQuery,
@@ -212,6 +324,12 @@ export default function HistoricalPricingPage() {
   const [
     quantity,
     setQuantity,
+  ] =
+    useState('')
+
+  const [
+    contractNumber,
+    setContractNumber,
   ] =
     useState('')
 
@@ -273,6 +391,22 @@ export default function HistoricalPricingPage() {
       string | null
     >(null)
 
+  const [
+    historySort,
+    setHistorySort,
+  ] =
+    useState<SortState>({
+      key:
+        'letting_date',
+
+      direction:
+        'desc',
+    })
+
+  // ========================================
+  // SEARCH
+  // ========================================
+
   async function search(
     event:
       FormEvent
@@ -306,14 +440,14 @@ export default function HistoricalPricingPage() {
         query.trim()
       )
 
-    if (
-  contractNumber.trim()
-) {
-  params.set(
-    'contract',
-    contractNumber.trim()
-  )
-}  
+      if (
+        contractNumber.trim()
+      ) {
+        params.set(
+          'contract',
+          contractNumber.trim()
+        )
+      }
 
       if (
         quantity.trim()
@@ -423,18 +557,27 @@ export default function HistoricalPricingPage() {
     }
   }
 
+  // ========================================
+  // CLEAR FILTERS
+  // ========================================
+
   function clearFilters() {
     setQuantity('')
-    setCounty('')
     setContractNumber('')
+    setCounty('')
     setDistrict('')
     setBidder('')
     setFromDate('')
     setToDate('')
+
     setLowBidOnly(
       false
     )
   }
+
+  // ========================================
+  // SUMMARY
+  // ========================================
 
   const summary =
     data?.summary ??
@@ -450,6 +593,182 @@ export default function HistoricalPricingPage() {
   const rows =
     data?.results ??
     []
+
+  // ========================================
+  // SORT HISTORICAL RESULTS
+  // ========================================
+
+  const sortedRows =
+    useMemo(
+      () => {
+        return [
+          ...rows,
+        ].sort(
+          (
+            a,
+            b
+          ) => {
+            let aValue:
+              | string
+              | number
+              | null =
+              null
+
+            let bValue:
+              | string
+              | number
+              | null =
+              null
+
+            switch (
+              historySort.key
+            ) {
+              case 'letting_date':
+                aValue =
+                  a.letting_date
+
+                bValue =
+                  b.letting_date
+                break
+
+              case 'contract_number':
+                aValue =
+                  a.contract_number
+
+                bValue =
+                  b.contract_number
+                break
+
+              case 'project_name':
+                aValue =
+                  a.project_name
+
+                bValue =
+                  b.project_name
+                break
+
+              case 'county':
+                aValue =
+                  a.counties.join(
+                    ', '
+                  )
+
+                bValue =
+                  b.counties.join(
+                    ', '
+                  )
+                break
+
+              case 'quantity':
+                aValue =
+                  a.quantity
+
+                bValue =
+                  b.quantity
+                break
+
+              case 'unit':
+                aValue =
+                  a.unit
+
+                bValue =
+                  b.unit
+                break
+
+              case 'bidder_name':
+                aValue =
+                  a.bidder_name
+
+                bValue =
+                  b.bidder_name
+                break
+
+              case 'bidder_rank':
+                aValue =
+                  a.bidder_rank
+
+                bValue =
+                  b.bidder_rank
+                break
+
+              case 'unit_price':
+                aValue =
+                  a.unit_price
+
+                bValue =
+                  b.unit_price
+                break
+
+              case 'extended_amount':
+                aValue =
+                  a.extended_amount
+
+                bValue =
+                  b.extended_amount
+                break
+
+              case 'bidder_total':
+                aValue =
+                  a.bidder_total
+
+                bValue =
+                  b.bidder_total
+                break
+            }
+
+            return compareSortableValues(
+              aValue,
+              bValue,
+              historySort.direction
+            )
+          }
+        )
+      },
+      [
+        rows,
+        historySort,
+      ]
+    )
+
+  function toggleHistorySort(
+    key:
+      HistorySortKey
+  ) {
+    setHistorySort(
+      current => ({
+        key,
+
+        direction:
+          current.key ===
+            key &&
+          current.direction ===
+            'asc'
+            ? 'desc'
+            : 'asc',
+      })
+    )
+  }
+
+  // ========================================
+  // OPEN CONTRACT
+  // ========================================
+
+  function openHistoricalBid(
+    row:
+      HistoryRow
+  ) {
+    router.push(
+      `/bid-results/${encodeURIComponent(
+        row.contract_number
+      )}?item=${encodeURIComponent(
+        row.item_number
+      )}`
+    )
+  }
+
+  // ========================================
+  // RENDER
+  // ========================================
 
   return (
     <main
@@ -473,7 +792,9 @@ export default function HistoricalPricingPage() {
             '0 auto',
         }}
       >
+        {/* ================================= */}
         {/* HEADER */}
+        {/* ================================= */}
 
         <div
           style={{
@@ -547,7 +868,9 @@ export default function HistoricalPricingPage() {
           </p>
         </div>
 
+        {/* ================================= */}
         {/* SEARCH */}
+        {/* ================================= */}
 
         <form
           onSubmit={
@@ -575,6 +898,8 @@ export default function HistoricalPricingPage() {
                 '0 1px 3px rgba(16,24,40,.06)',
             }}
           >
+            {/* MAIN SEARCH */}
+
             <div
               style={{
                 display:
@@ -650,13 +975,15 @@ export default function HistoricalPricingPage() {
               </label>
             </div>
 
+            {/* FILTER ROW */}
+
             <div
               style={{
                 display:
                   'grid',
 
                 gridTemplateColumns:
-                  'repeat(6, minmax(130px,1fr))',
+                  'repeat(auto-fit, minmax(145px,1fr))',
 
                 gap:
                   '14px',
@@ -665,45 +992,43 @@ export default function HistoricalPricingPage() {
                   '18px',
               }}
             >
+              {/* CONTRACT */}
+
               <label>
                 <div
                   style={
                     labelStyle
                   }
-                  >
-  <label>
-    <div
-      style={
-        labelStyle
-      }
-    >
-      Contract
-    </div>
+                >
+                  Contract
+                </div>
 
-    <input
-      value={
-        contractNumber
-      }
-      onChange={
-        event =>
-          setContractNumber(
-            event
-              .target
-              .value
-          )
-      }
-      placeholder="25139"
-      style={
-        inputStyle
-      }
-    />
-  </label>
+                <input
+                  value={
+                    contractNumber
+                  }
+                  onChange={
+                    event =>
+                      setContractNumber(
+                        event
+                          .target
+                          .value
+                      )
+                  }
+                  placeholder="25139"
+                  style={
+                    inputStyle
+                  }
+                />
+              </label>
 
-  <label>
-    <div
-      style={
-        labelStyle
-      }
+              {/* COUNTY */}
+
+              <label>
+                <div
+                  style={
+                    labelStyle
+                  }
                 >
                   County
                 </div>
@@ -726,6 +1051,8 @@ export default function HistoricalPricingPage() {
                   }
                 />
               </label>
+
+              {/* DISTRICT */}
 
               <label>
                 <div
@@ -755,6 +1082,8 @@ export default function HistoricalPricingPage() {
                 />
               </label>
 
+              {/* BIDDER */}
+
               <label>
                 <div
                   style={
@@ -782,6 +1111,8 @@ export default function HistoricalPricingPage() {
                   }
                 />
               </label>
+
+              {/* FROM */}
 
               <label>
                 <div
@@ -811,6 +1142,8 @@ export default function HistoricalPricingPage() {
                 />
               </label>
 
+              {/* TO */}
+
               <label>
                 <div
                   style={
@@ -839,6 +1172,8 @@ export default function HistoricalPricingPage() {
                 />
               </label>
             </div>
+
+            {/* ACTION ROW */}
 
             <div
               style={{
@@ -923,9 +1258,14 @@ export default function HistoricalPricingPage() {
                   disabled={
                     loading
                   }
-                  style={
-                    primaryButtonStyle
-                  }
+                  style={{
+                    ...primaryButtonStyle,
+
+                    opacity:
+                      loading
+                        ? 0.65
+                        : 1,
+                  }}
                 >
                   {loading
                     ? 'Searching...'
@@ -935,6 +1275,10 @@ export default function HistoricalPricingPage() {
             </div>
           </div>
         </form>
+
+        {/* ================================= */}
+        {/* ERROR */}
+        {/* ================================= */}
 
         {error && (
           <div
@@ -962,19 +1306,30 @@ export default function HistoricalPricingPage() {
           </div>
         )}
 
+        {/* ================================= */}
+        {/* NO RESULTS */}
+        {/* ================================= */}
+
         {data &&
           data.filtered_results ===
             0 && (
             <div
-              style={
-                cardStyle
-              }
+              style={{
+                ...cardStyle,
+
+                marginBottom:
+                  '18px',
+              }}
             >
               No historical
               pricing matched
               these filters.
             </div>
           )}
+
+        {/* ================================= */}
+        {/* SUMMARY */}
+        {/* ================================= */}
 
         {summary && (
           <>
@@ -1032,8 +1387,7 @@ export default function HistoricalPricingPage() {
                     }}
                   >
                     Suggested
-                    historical
-                    range
+                    historical range
                   </div>
 
                   {summary
@@ -1076,6 +1430,7 @@ export default function HistoricalPricingPage() {
                         }}
                       >
                         Median{' '}
+
                         <strong>
                           {money(
                             summary
@@ -1143,7 +1498,7 @@ export default function HistoricalPricingPage() {
                   'grid',
 
                 gridTemplateColumns:
-                  'repeat(6, minmax(140px,1fr))',
+                  'repeat(auto-fit, minmax(150px,1fr))',
 
                 gap:
                   '12px',
@@ -1212,7 +1567,7 @@ export default function HistoricalPricingPage() {
                   'grid',
 
                 gridTemplateColumns:
-                  '1fr 1fr',
+                  'repeat(auto-fit, minmax(320px,1fr))',
 
                 gap:
                   '18px',
@@ -1240,7 +1595,9 @@ export default function HistoricalPricingPage() {
           </>
         )}
 
+        {/* ================================= */}
         {/* MULTIPLE ITEM MATCHES */}
+        {/* ================================= */}
 
         {data
           ?.item_groups &&
@@ -1263,6 +1620,9 @@ export default function HistoricalPricingPage() {
 
                   fontSize:
                     '18px',
+
+                  color:
+                    '#101828',
                 }}
               >
                 Matching NJDOT
@@ -1283,6 +1643,7 @@ export default function HistoricalPricingPage() {
                   .map(
                     group => (
                       <button
+                        type="button"
                         key={
                           group
                             .item_number
@@ -1345,7 +1706,9 @@ export default function HistoricalPricingPage() {
                               .contracts
                           }{' '}
                           contracts
+
                           {' · '}
+
                           {
                             group
                               .summary
@@ -1360,7 +1723,9 @@ export default function HistoricalPricingPage() {
             </div>
           )}
 
+        {/* ================================= */}
         {/* RESULTS TABLE */}
+        {/* ================================= */}
 
         {rows.length >
           0 && (
@@ -1412,8 +1777,18 @@ export default function HistoricalPricingPage() {
                 }}
               >
                 {rows.length}{' '}
-                pricing
-                observations
+                pricing observations
+
+                {' · '}
+
+                Click a column
+                header to sort
+
+                {' · '}
+
+                Click any bid
+                to open the full
+                contract
               </div>
             </div>
 
@@ -1432,71 +1807,245 @@ export default function HistoricalPricingPage() {
                     'collapse',
 
                   minWidth:
-                    '1250px',
+                    '1350px',
                 }}
               >
                 <thead>
                   <tr>
                     <TableHeader>
-                      Date
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'letting_date'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'letting_date'
+                          )
+                        }
+                      >
+                        Date
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Contract
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'contract_number'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'contract_number'
+                          )
+                        }
+                      >
+                        Contract
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Project
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'project_name'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'project_name'
+                          )
+                        }
+                      >
+                        Project
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      County
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'county'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'county'
+                          )
+                        }
+                      >
+                        County
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Qty
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'quantity'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'quantity'
+                          )
+                        }
+                      >
+                        Qty
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Unit
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'unit'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'unit'
+                          )
+                        }
+                      >
+                        Unit
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Bidder
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'bidder_name'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'bidder_name'
+                          )
+                        }
+                      >
+                        Bidder
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Rank
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'bidder_rank'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'bidder_rank'
+                          )
+                        }
+                      >
+                        Rank
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Unit Price
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'unit_price'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'unit_price'
+                          )
+                        }
+                      >
+                        Unit Price
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Extension
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'extended_amount'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'extended_amount'
+                          )
+                        }
+                      >
+                        Extension
+                      </SortLabel>
                     </TableHeader>
 
                     <TableHeader>
-                      Bid Total
+                      <SortLabel
+                        active={
+                          historySort.key ===
+                          'bidder_total'
+                        }
+                        direction={
+                          historySort.direction
+                        }
+                        onClick={() =>
+                          toggleHistorySort(
+                            'bidder_total'
+                          )
+                        }
+                      >
+                        Bid Total
+                      </SortLabel>
                     </TableHeader>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {rows.map(
+                  {sortedRows.map(
                     (
                       row,
                       index
                     ) => (
                       <tr
                         key={`${row.contract_item_id}-${row.bidder_name}-${index}`}
+                        onClick={() =>
+                          openHistoricalBid(
+                            row
+                          )
+                        }
+                        title={`Open contract ${row.contract_number} and item ${row.item_number}`}
                         style={{
                           background:
                             row
                               .is_low_bidder
                               ? '#f6fef9'
                               : '#ffffff',
+
+                          cursor:
+                            'pointer',
                         }}
                       >
                         <TableCell>
@@ -1517,7 +2066,8 @@ export default function HistoricalPricingPage() {
                         <TableCell>
                           {
                             row
-                              .project_name
+                              .project_name ??
+                            '—'
                           }
                         </TableCell>
 
@@ -1550,32 +2100,7 @@ export default function HistoricalPricingPage() {
 
                           {row
                             .is_low_bidder && (
-                            <span
-                              style={{
-                                marginLeft:
-                                  '8px',
-
-                                background:
-                                  '#dcfae6',
-
-                                color:
-                                  '#067647',
-
-                                borderRadius:
-                                  '999px',
-
-                                padding:
-                                  '2px 7px',
-
-                                fontSize:
-                                  '11px',
-
-                                fontWeight:
-                                  700,
-                              }}
-                            >
-                              WINNER
-                            </span>
+                            <WinnerBadge />
                           )}
                         </TableCell>
 
@@ -1618,6 +2143,154 @@ export default function HistoricalPricingPage() {
     </main>
   )
 }
+
+// ==========================================
+// SORT LABEL
+// ==========================================
+
+function SortLabel({
+  children,
+  active,
+  direction,
+  onClick,
+}: {
+  children:
+    ReactNode
+
+  active:
+    boolean
+
+  direction:
+    SortDirection
+
+  onClick:
+    () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        event => {
+          event
+            .stopPropagation()
+
+          onClick()
+        }
+      }
+      style={{
+        display:
+          'inline-flex',
+
+        alignItems:
+          'center',
+
+        justifyContent:
+          'flex-start',
+
+        gap:
+          '6px',
+
+        width:
+          '100%',
+
+        border:
+          0,
+
+        padding:
+          0,
+
+        margin:
+          0,
+
+        background:
+          'transparent',
+
+        color:
+          'inherit',
+
+        font:
+          'inherit',
+
+        fontWeight:
+          700,
+
+        textAlign:
+          'left',
+
+        cursor:
+          'pointer',
+      }}
+    >
+      <span>
+        {children}
+      </span>
+
+      <span
+        style={{
+          fontSize:
+            '9px',
+
+          opacity:
+            active
+              ? 1
+              : 0.35,
+
+          flexShrink:
+            0,
+        }}
+      >
+        {active
+          ? direction ===
+            'asc'
+            ? '▲'
+            : '▼'
+          : '↕'}
+      </span>
+    </button>
+  )
+}
+
+// ==========================================
+// WINNER BADGE
+// ==========================================
+
+function WinnerBadge() {
+  return (
+    <span
+      style={{
+        display:
+          'inline-block',
+
+        marginLeft:
+          '8px',
+
+        background:
+          '#dcfae6',
+
+        color:
+          '#067647',
+
+        borderRadius:
+          '999px',
+
+        padding:
+          '2px 7px',
+
+        fontSize:
+          '11px',
+
+        fontWeight:
+          700,
+      }}
+    >
+      WINNER
+    </span>
+  )
+}
+
+// ==========================================
+// STAT CARD
+// ==========================================
 
 function StatCard({
   label,
@@ -1671,6 +2344,10 @@ function StatCard({
   )
 }
 
+// ==========================================
+// PRICE BLOCK
+// ==========================================
+
 function PriceBlock({
   title,
   stats,
@@ -1680,7 +2357,9 @@ function PriceBlock({
 }) {
   return (
     <div
-      style={cardStyle}
+      style={
+        cardStyle
+      }
     >
       <h3
         style={{
@@ -1755,6 +2434,10 @@ function PriceBlock({
   )
 }
 
+// ==========================================
+// MINI STAT
+// ==========================================
+
 function MiniStat({
   label,
   value,
@@ -1794,11 +2477,15 @@ function MiniStat({
   )
 }
 
+// ==========================================
+// TABLE HEADER
+// ==========================================
+
 function TableHeader({
   children,
 }: {
   children:
-    React.ReactNode
+    ReactNode
 }) {
   return (
     <th
@@ -1833,11 +2520,15 @@ function TableHeader({
   )
 }
 
+// ==========================================
+// TABLE CELL
+// ==========================================
+
 function TableCell({
   children,
 }: {
   children:
-    React.ReactNode
+    ReactNode
 }) {
   return (
     <td
@@ -1863,8 +2554,12 @@ function TableCell({
   )
 }
 
+// ==========================================
+// STYLES
+// ==========================================
+
 const labelStyle:
-  React.CSSProperties =
+  CSSProperties =
 {
   display:
     'block',
@@ -1883,7 +2578,7 @@ const labelStyle:
 }
 
 const inputStyle:
-  React.CSSProperties =
+  CSSProperties =
 {
   width:
     '100%',
@@ -1911,7 +2606,7 @@ const inputStyle:
 }
 
 const cardStyle:
-  React.CSSProperties =
+  CSSProperties =
 {
   background:
     '#ffffff',
@@ -1930,7 +2625,7 @@ const cardStyle:
 }
 
 const primaryButtonStyle:
-  React.CSSProperties =
+  CSSProperties =
 {
   border:
     0,
@@ -1955,7 +2650,7 @@ const primaryButtonStyle:
 }
 
 const secondaryButtonStyle:
-  React.CSSProperties =
+  CSSProperties =
 {
   border:
     '1px solid #d0d5dd',
