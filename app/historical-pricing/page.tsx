@@ -656,7 +656,7 @@ export default function HistoricalPricingPage() {
                   'grid',
 
                 gridTemplateColumns:
-                  'repeat(5, minmax(140px,1fr))',
+                  'repeat(6, minmax(130px,1fr))',
 
                 gap:
                   '14px',
